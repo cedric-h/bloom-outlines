@@ -3,6 +3,33 @@ import MetalKit
 import Foundation
 import simd
 
+extension simd_float4x4 {
+    static func perspective(aspect: Float, fovy: Float, near: Float, far: Float) -> Self {
+        let yScale = 1 / tan(fovy * 0.5)
+        let xScale = yScale / aspect
+        let zRange = far - near
+        let zScale = -(far + near) / zRange
+        let wzScale = -2 * far * near / zRange
+
+        let P: SIMD4<Float> = [xScale, 0, 0, 0]
+        let Q: SIMD4<Float> = [0, yScale, 0, 0]
+        let R: SIMD4<Float> = [0, 0, zScale, -1]
+        let S: SIMD4<Float> = [0, 0, wzScale, 0]
+
+        return simd_float4x4([P, Q, R, S])
+    }
+
+    @inlinable init(translate t: SIMD3<Float>) {
+        self = simd_float4x4(columns: (
+            [1, 0, 0, 0],
+            [0, 1, 0, 0],
+            [0, 0, 1, 0],
+            [t.x, t.y, t.z, 1]
+        ))
+    }
+}
+
+
 class Renderer: NSObject {
     let device: MTLDevice
     var pipelineState: MTLRenderPipelineState
@@ -50,10 +77,19 @@ extension Renderer: MTKViewDelegate {
             let encoder = buffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else { return }
 
         /* { ---  make vertices --- */
+            let aspect_ratio = Float(viewportSize.x) / Float(viewportSize.y)
+            var m = simd_float4x4.perspective(
+                aspect: aspect_ratio,
+                fovy: (45 * Float.pi) / 180,
+                near: 0.1,
+                far: 100.0
+            )
+            m = simd_mul(m, .init(translate: [0.0, 0.0, -6.0]))
+
             self.vertices = [
-                Vertex(pos: SIMD4<Float>([-0.5, -0.5, 0.0, 1.0]), color: SIMD4<Float>([1.0, 0.0, 0.0, 1.0])),
-                Vertex(pos: SIMD4<Float>([ 0.0,  1.0, 0.0, 1.0]), color: SIMD4<Float>([0.0, 1.0, 0.0, 1.0])),
-                Vertex(pos: SIMD4<Float>([ 0.5, -0.5, 0.0, 1.0]), color: SIMD4<Float>([0.0, 0.0, 1.0, 1.0]))
+                Vertex(pos: simd_mul(m, SIMD4<Float>([-0.5, -0.5, 0.0, 1.0])), color: SIMD4<Float>([1.0, 0.0, 0.0, 1.0])),
+                Vertex(pos: simd_mul(m, SIMD4<Float>([ 0.0,  1.0, 0.0, 1.0])), color: SIMD4<Float>([0.0, 1.0, 0.0, 1.0])),
+                Vertex(pos: simd_mul(m, SIMD4<Float>([ 0.5, -0.5, 0.0, 1.0])), color: SIMD4<Float>([0.0, 0.0, 1.0, 1.0]))
             ]
         /* } --- make vertices */
 
