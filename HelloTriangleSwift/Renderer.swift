@@ -27,6 +27,39 @@ extension simd_float4x4 {
             [t.x, t.y, t.z, 1]
         ))
     }
+
+    @inlinable init(xRot rad: Float) {
+      let s = sin(rad);
+      let c = cos(rad);
+      self = simd_float4x4(columns: (
+          [ 1,  0, 0, 0],
+          [ 0,  c, s, 0],
+          [ 0, -s, c, 0],
+          [ 0,  0, 0, 1]
+      ));
+    }
+
+    @inlinable init(yRot rad: Float) {
+      let s = sin(rad);
+      let c = cos(rad);
+      self = simd_float4x4(columns: (
+          [ c, 0, -s, 0],
+          [ 0, 1,  0, 0],
+          [ s, 0,  c, 0],
+          [ 0, 0,  0, 1]
+      ));
+    }
+
+    @inlinable init(zRot rad: Float) {
+      let s = sin(rad);
+      let c = cos(rad);
+      self = simd_float4x4(columns: (
+           [ c, s, 0, 0],
+           [-s, c, 0, 0],
+           [ 0, 0, 1, 0],
+           [ 0, 0, 0, 1]
+        ));
+    }
 }
 
 
@@ -35,6 +68,7 @@ class Renderer: NSObject {
     var pipelineState: MTLRenderPipelineState
     var commandQueue: MTLCommandQueue
     var viewportSize: simd_uint2 = vector2(0, 0)
+    var cameraRotation: SIMD2<Float> = vector2(0, 0)
 
     private var vertices = [Vertex]()
 
@@ -60,7 +94,8 @@ class Renderer: NSObject {
     }
     
     func pan(delta: CGPoint) {
-        print(delta)
+      self.cameraRotation.x -= Float(delta.x)*0.0004;
+      self.cameraRotation.y -= Float(delta.y)*0.0004;
     }
 }
 
@@ -78,18 +113,22 @@ extension Renderer: MTKViewDelegate {
 
         /* { ---  make vertices --- */
             let aspect_ratio = Float(viewportSize.x) / Float(viewportSize.y)
-            var m = simd_float4x4.perspective(
+            var mvp = simd_float4x4.perspective(
                 aspect: aspect_ratio,
                 fovy: (45 * Float.pi) / 180,
                 near: 0.1,
                 far: 100.0
             )
-            m = simd_mul(m, .init(translate: [0.0, 0.0, -6.0]))
+            mvp = simd_mul(mvp, .init(translate: [0.0, 0.0, -6.0]))
+            mvp = simd_mul(mvp, simd_mul(
+                simd_float4x4.init(xRot: -self.cameraRotation.y),
+                simd_float4x4.init(yRot:  self.cameraRotation.x)
+            ).inverse);
 
             self.vertices = [
-                Vertex(pos: simd_mul(m, SIMD4<Float>([-0.5, -0.5, 0.0, 1.0])), color: SIMD4<Float>([1.0, 0.0, 0.0, 1.0])),
-                Vertex(pos: simd_mul(m, SIMD4<Float>([ 0.0,  1.0, 0.0, 1.0])), color: SIMD4<Float>([0.0, 1.0, 0.0, 1.0])),
-                Vertex(pos: simd_mul(m, SIMD4<Float>([ 0.5, -0.5, 0.0, 1.0])), color: SIMD4<Float>([0.0, 0.0, 1.0, 1.0]))
+                Vertex(pos: simd_mul(mvp, SIMD4<Float>([-0.7, -0.7, 0.0, 1.0])), color: SIMD4<Float>([1.0, 0.0, 0.0, 1.0])),
+                Vertex(pos: simd_mul(mvp, SIMD4<Float>([ 0.0,  0.7, 0.0, 1.0])), color: SIMD4<Float>([0.0, 1.0, 0.0, 1.0])),
+                Vertex(pos: simd_mul(mvp, SIMD4<Float>([ 0.7, -0.7, 0.0, 1.0])), color: SIMD4<Float>([0.0, 0.0, 1.0, 1.0]))
             ]
         /* } --- make vertices */
 
