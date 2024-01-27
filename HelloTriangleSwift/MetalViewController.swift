@@ -20,7 +20,12 @@ class MetalViewController: UIViewController {
         metalView.device = MTLCreateSystemDefaultDevice()
 
         let pan = UIPanGestureRecognizer(target: self, action: #selector(panMetalView(_:)))
+        if #available(iOS 13.4, *) {
+            pan.allowedScrollTypesMask = UIScrollTypeMask.all
+        }
         metalView.addGestureRecognizer(pan)
+
+        metalView.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapMetalView(_:))))
         
         do {
             renderer = try Renderer(metalKitView: metalView)
@@ -32,6 +37,10 @@ class MetalViewController: UIViewController {
     
     @objc func panMetalView(_ gr: UIPanGestureRecognizer) {
         renderer?.pan(delta: gr.velocity(in: self.view))
+    }
+
+    @objc func tapMetalView(_ gr: UIPanGestureRecognizer) {
+        renderer?.tap(pos: gr.location(in: self.view))
     }
     
     override func viewDidLayoutSubviews() {

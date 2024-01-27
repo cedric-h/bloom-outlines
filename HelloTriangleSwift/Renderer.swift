@@ -71,6 +71,7 @@ class Renderer: NSObject {
     /* needed to construct mvp */
     var viewportSize: simd_uint2 = vector2(0, 0)
     var cameraRotation: SIMD2<Float> = vector2(0, 0)
+    var cameraZoom: Float = 1.0
 
     /* needed for outline pipeline */
     var pipelineState: MTLRenderPipelineState
@@ -117,8 +118,13 @@ class Renderer: NSObject {
     }
 
     func pan(delta: CGPoint) {
-      self.cameraRotation.x -= Float(delta.x)*0.0004;
-      self.cameraRotation.y -= Float(delta.y)*0.0004;
+        self.cameraRotation.x -= Float(delta.x)*0.0004;
+        self.cameraRotation.y -= Float(delta.y)*0.0004;
+    }
+
+    func tap(pos: CGPoint) {
+        let halfHeight = CGFloat(UIScreen.main.bounds.size.height)/2.0
+        self.cameraZoom *= (pos.y < halfHeight) ? 0.8 : 1.2;
     }
 }
 
@@ -135,7 +141,6 @@ extension Renderer: MTKViewDelegate {
     }
     
     func drawCpuLine(from a: SIMD3<Float>, to b: SIMD3<Float>, thickness: Float) {
-
         var mvp: simd_float4x4;
         var aspect_ratio: Float;
         /* { ---  make mvp from scratch --- */
@@ -146,15 +151,29 @@ extension Renderer: MTKViewDelegate {
                 near: 0.1,
                 far: 100.0
             )
-            mvp = simd_mul(mvp, .init(translate: [0.0, 0.0, -6.0]))
+            mvp = simd_mul(mvp, .init(translate: [0.0, 0.0, -6.0 * cameraZoom]))
             mvp = simd_mul(mvp, simd_mul(
-                simd_float4x4.init(xRot: -self.cameraRotation.y),
-                simd_float4x4.init(yRot:  self.cameraRotation.x)
-            ).inverse);
+                simd_float4x4.init(yRot: -self.cameraRotation.x),
+                simd_float4x4.init(xRot:  self.cameraRotation.y)
+            ));
         /* } ---  make mvp from scratch --- */
 
-        let screen_a = simd_mul(mvp, SIMD4<Float>([a.x, a.y, a.z, 1.0]));
-        let screen_b = simd_mul(mvp, SIMD4<Float>([b.x, b.y, b.z, 1.0]));
+        var screen_a = simd_mul(mvp, SIMD4<Float>([a.x, a.y, a.z, 1.0]));
+        var screen_b = simd_mul(mvp, SIMD4<Float>([b.x, b.y, b.z, 1.0]));
+
+        /* here we account for the "perspective divide" that the GPU does under the hood;
+         * without this, the lines will not stay the same thickness when the camera is far away */
+        if true {
+            screen_a.x /= screen_a.w;
+            screen_a.y /= screen_a.w;
+            screen_a.z /= screen_a.w;
+            screen_a.w = 1;
+
+            screen_b.x /= screen_b.w;
+            screen_b.y /= screen_b.w;
+            screen_b.z /= screen_b.w;
+            screen_b.w = 1;
+        }
         
         /* perpendicular to "a -> b" */
         let nx = -(screen_b.y - screen_a.y);
@@ -194,10 +213,10 @@ extension Renderer: MTKViewDelegate {
             let d = SIMD3<Float>([ 0.7,  0.7, 0.0]);
 
             self.clearCpuLines();
-            self.drawCpuLine(from: a, to: b, thickness: 0.09);
-            self.drawCpuLine(from: b, to: c, thickness: 0.09);
-            self.drawCpuLine(from: c, to: d, thickness: 0.09);
-            self.drawCpuLine(from: d, to: a, thickness: 0.09);
+            self.drawCpuLine(from: a, to: b, thickness: 0.02);
+            self.drawCpuLine(from: b, to: c, thickness: 0.02);
+            self.drawCpuLine(from: c, to: d, thickness: 0.02);
+            self.drawCpuLine(from: d, to: a, thickness: 0.02);
         /* } --- make vertices */
 
         encoder.setViewport(MTLViewport(
