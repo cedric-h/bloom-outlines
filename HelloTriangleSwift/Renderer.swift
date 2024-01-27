@@ -12,27 +12,35 @@ class Renderer: NSObject {
     private var vertices = [Vertex]()
 
     init(metalKitView: MTKView) throws {
-        metalKitView.colorPixelFormat = .bgra10_xr // MTKView will not apply gamma encoding
-
         let device = metalKitView.device!
-        let library = device.makeDefaultLibrary()!
-        let pipelineState = Renderer.makePipelineState(for: metalKitView, device: device, library: library)!
-        let commandQueue = device.makeCommandQueue()!
+
+        /* { --- make pipeline state --- */
+            let library = device.makeDefaultLibrary()!
+            let descriptor = MTLRenderPipelineDescriptor()
+            /* without sampleCount line, your geometry will be pixelated. (enables MSAA) */
+            descriptor.vertexFunction                  = library.makeFunction(name: "vertexShader")
+            descriptor.fragmentFunction                = library.makeFunction(name: "fragmentShader")
+            descriptor.colorAttachments[0].pixelFormat = metalKitView.colorPixelFormat
+            descriptor.depthAttachmentPixelFormat      = metalKitView.depthStencilPixelFormat
+            descriptor.sampleCount                     = metalKitView.sampleCount
+            self.pipelineState = (try? device.makeRenderPipelineState(descriptor: descriptor))!
+        /* } --- make pipeline state --- */
 
         self.device = device
-        self.pipelineState = pipelineState
-        self.commandQueue = commandQueue
+        self.commandQueue = device.makeCommandQueue()!
         
         super.init()
+    }
+    
+    func pan(delta: CGPoint) {
+        print(delta)
     }
 }
 
 extension Renderer: MTKViewDelegate {
-
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
         viewportSize.x = UInt32(size.width)
         viewportSize.y = UInt32(size.height)
-        vertices = makeVerticesForViewSize(size, padding: 48.0)
     }
     
     func draw(in view: MTKView) {
@@ -40,61 +48,30 @@ extension Renderer: MTKViewDelegate {
             let buffer = commandQueue.makeCommandBuffer(),
             let renderPassDescriptor = view.currentRenderPassDescriptor,
             let encoder = buffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else { return }
-        
-        prepareToDraw(using: encoder)
-        encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
-        finishDrawing(drawable, to: buffer, using: encoder)
-    }
 
-    private func prepareToDraw(using encoder: MTLRenderCommandEncoder) {
-        let viewPort = MTLViewport(originX: 0,
-                                   originY: 0,
-                                   width: Double(viewportSize.x),
-                                   height: Double(viewportSize.y),
-                                   znear: -1.0, zfar: 1.0)
-        encoder.setViewport(viewPort)
+        /* { ---  make vertices --- */
+            self.vertices = [
+                Vertex(pos: SIMD4<Float>([-0.5, -0.5, 0.0, 1.0]), color: SIMD4<Float>([1.0, 0.0, 0.0, 1.0])),
+                Vertex(pos: SIMD4<Float>([ 0.0,  1.0, 0.0, 1.0]), color: SIMD4<Float>([0.0, 1.0, 0.0, 1.0])),
+                Vertex(pos: SIMD4<Float>([ 0.5, -0.5, 0.0, 1.0]), color: SIMD4<Float>([0.0, 0.0, 1.0, 1.0]))
+            ]
+        /* } --- make vertices */
+
+        encoder.setViewport(MTLViewport(
+            originX: 0,
+            originY: 0,
+            width: Double(viewportSize.x),
+            height: Double(viewportSize.y),
+            znear: -1.0, zfar: 1.0
+        ));
         encoder.setRenderPipelineState(pipelineState)
         encoder.setVertexBytes(vertices,
                                length: MemoryLayout<Vertex>.stride * vertices.count,
                                index: Int(VertexInputIndexVertices.rawValue))
-        encoder.setVertexBytes(&viewportSize,
-                               length: MemoryLayout<simd_uint2>.stride,
-                               index: Int(VertexInputIndexViewportSize.rawValue))
-    }
+        encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
 
-    private func finishDrawing(_ drawable: MTLDrawable, to buffer: MTLCommandBuffer, using encoder: MTLRenderCommandEncoder) {
         encoder.endEncoding()
         buffer.present(drawable)
         buffer.commit()
-    }
-
-    static private func makePipelineState(for metalKitView: MTKView, device: MTLDevice, library: MTLLibrary) -> MTLRenderPipelineState? {
-        let descriptor = MTLRenderPipelineDescriptor()
-        descriptor.vertexFunction = library.makeFunction(name: "vertexShader")
-        descriptor.fragmentFunction = library.makeFunction(name: "fragmentShader")
-        descriptor.colorAttachments[0].pixelFormat = metalKitView.colorPixelFormat
-        descriptor.depthAttachmentPixelFormat = metalKitView.depthStencilPixelFormat
-        return try? device.makeRenderPipelineState(descriptor: descriptor)
-    }
-    
-    private func makeVerticesForViewSize(_ size: CGSize, padding: CGFloat) -> [Vertex] {
-        let maxX = Float(size.width / 2.0 - padding)
-        let minX = Float(-maxX)
-        let maxY = Float(size.height / 2.0 - padding)
-        let minY = Float(-maxY)
-
-        let red   = SIMD4<Float>([1.0, 0.0, 0.0, 1.0])
-        let green = SIMD4<Float>([0.0, 1.0, 0.0, 1.0])
-        let blue  = SIMD4<Float>([0.0, 0.0, 1.0, 1.0])
-
-        let leftCorner  = SIMD2<Float>(minX ,minY)
-        let top         = SIMD2<Float>(0, maxY)
-        let rightCorner = SIMD2<Float>(maxX, minY)
-
-        let vertex1 = Vertex(position: leftCorner, color: red)
-        let vertex2 = Vertex(position: top, color: green)
-        let vertex3 = Vertex(position: rightCorner, color: blue)
-
-        return [vertex1, vertex2, vertex3]
     }
 }
