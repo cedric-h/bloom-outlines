@@ -70,8 +70,6 @@ class Renderer: NSObject {
     var viewportSize: simd_uint2 = vector2(0, 0)
     var cameraRotation: SIMD2<Float> = vector2(0, 0)
 
-    private var vertices = [Vertex]()
-
     init(metalKitView: MTKView) throws {
         let device = metalKitView.device!
 
@@ -111,6 +109,8 @@ extension Renderer: MTKViewDelegate {
             let renderPassDescriptor = view.currentRenderPassDescriptor,
             let encoder = buffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else { return }
 
+        var vertices = [Vertex]()
+        var indices = [UInt16]()
         /* { ---  make vertices --- */
             let aspect_ratio = Float(viewportSize.x) / Float(viewportSize.y)
             var mvp = simd_float4x4.perspective(
@@ -125,11 +125,14 @@ extension Renderer: MTKViewDelegate {
                 simd_float4x4.init(yRot:  self.cameraRotation.x)
             ).inverse);
 
-            self.vertices = [
-                Vertex(pos: simd_mul(mvp, SIMD4<Float>([-0.7, -0.7, 0.0, 1.0])), color: SIMD4<Float>([1.0, 0.0, 0.0, 1.0])),
-                Vertex(pos: simd_mul(mvp, SIMD4<Float>([ 0.0,  0.7, 0.0, 1.0])), color: SIMD4<Float>([0.0, 1.0, 0.0, 1.0])),
-                Vertex(pos: simd_mul(mvp, SIMD4<Float>([ 0.7, -0.7, 0.0, 1.0])), color: SIMD4<Float>([0.0, 0.0, 1.0, 1.0]))
+            vertices = [
+                Vertex(pos: simd_mul(mvp, SIMD4<Float>([ 0.7, -0.7, 0.0, 1.0])), color: SIMD4<Float>([1.0, 0.0, 0.0, 1.0])),
+                Vertex(pos: simd_mul(mvp, SIMD4<Float>([-0.7, -0.7, 0.0, 1.0])), color: SIMD4<Float>([0.0, 1.0, 0.0, 1.0])),
+                Vertex(pos: simd_mul(mvp, SIMD4<Float>([-0.7,  0.7, 0.0, 1.0])), color: SIMD4<Float>([0.0, 0.0, 1.0, 1.0])),
+                Vertex(pos: simd_mul(mvp, SIMD4<Float>([ 0.7,  0.7, 0.0, 1.0])), color: SIMD4<Float>([1.0, 0.0, 1.0, 1.0]))
             ]
+
+            indices = [0, 1, 2, 3, 2, 0]
         /* } --- make vertices */
 
         encoder.setViewport(MTLViewport(
@@ -143,7 +146,13 @@ extension Renderer: MTKViewDelegate {
         encoder.setVertexBytes(vertices,
                                length: MemoryLayout<Vertex>.stride * vertices.count,
                                index: Int(VertexInputIndexVertices.rawValue))
-        encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+        encoder.drawIndexedPrimitives(
+            type: .triangle,
+            indexCount: indices.count,
+            indexType: .uint16,
+            indexBuffer: device.makeBuffer(bytes: indices, length: indices.count * MemoryLayout<UInt16>.size)!,
+            indexBufferOffset: 0
+        )
 
         encoder.endEncoding()
         buffer.present(drawable)
