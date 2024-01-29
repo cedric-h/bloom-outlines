@@ -4,16 +4,17 @@
 
 using namespace metal;
 
+/* =================== OUTLINE RENDER SHADERS =================== */
 typedef struct {
     float4 pos [[position]];
     float4 color;
-} RasterizerData;
+} OutlineRasterizerData;
 
-vertex RasterizerData vertexShader(
+vertex OutlineRasterizerData outlineVertexShader(
     uint vertexID [[vertex_id]],
-    constant Vertex *vertices [[buffer(VertexInputIndexVertices)]]
+    constant OutlineVertex *vertices [[buffer(VertexInputIndexVertices)]]
 ) {
-    RasterizerData out;
+    OutlineRasterizerData out;
     
     out.pos   = vertices[vertexID].pos;
     out.color = vertices[vertexID].color;
@@ -21,8 +22,38 @@ vertex RasterizerData vertexShader(
     return out;
 }
 
-fragment float4 fragmentShader(
-    RasterizerData in [[stage_in]]
+fragment float4 outlineFragmentShader(
+    OutlineRasterizerData in [[stage_in]]
 ) {
     return in.color;
 }
+/* =================== OUTLINE RENDER SHADERS =================== */
+
+/* =================== FULLSCREEN RENDER SHADERS =================== */
+typedef struct {
+    float4 pos [[position]];
+    float2 uv;
+} FullscreenRasterizerData;
+
+vertex FullscreenRasterizerData fullscreenVertexShader(
+    uint vertexID [[vertex_id]],
+    constant FullscreenVertex *vertices [[buffer(VertexInputIndexVertices)]]
+) {
+    FullscreenRasterizerData out;
+    
+    out.pos = float4(vertices[vertexID].pos, 0.0, 1.0);
+    out.uv = vertices[vertexID].uv;
+    
+    return out;
+}
+
+fragment float4 fullscreenFragmentShader(
+    FullscreenRasterizerData in [[stage_in]],
+    texture2d<float, access::sample> colorTexture [[ texture(0) ]]
+) {
+    constexpr sampler textureSampler (mag_filter::linear,
+                                      min_filter::linear);
+    
+    return 3.0*colorTexture.sample(textureSampler, in.uv);
+}
+/* =================== FULLSCREEN RENDER SHADERS =================== */

@@ -1,6 +1,7 @@
 import Metal
 import MetalKit
 import Foundation
+import MetalPerformanceShaders
 import simd
 
 extension simd_float4x4 {
@@ -73,32 +74,93 @@ class Renderer: NSObject {
     var cameraRotation: SIMD2<Float> = vector2(0, 0)
     var cameraZoom: Float = 1.0
 
-    /* needed for outline pipeline */
-    var pipelineState: MTLRenderPipelineState
+    /* needed for outline -> renderTarget pipeline */
+    var outlineRenderTarget: MTLTexture
+    var outlineRenderPassDesc: MTLRenderPassDescriptor
+    var outlinePipelineState: MTLRenderPipelineState
     var cpu_lineCount: Int = 0
-    var cpu_vbuf = [Vertex]()
+    var cpu_vbuf = [OutlineVertex]()
     var cpu_ibuf = [UInt16]()
     var gpu_lineCount: Int = 0
     var gpu_vbuf: MTLBuffer!
     var gpu_ibuf: MTLBuffer!
+    
+    /* needed for blur pass */
+    var fullscreenPipelineState: MTLRenderPipelineState
 
     init(metalKitView: MTKView) throws {
-        let device = metalKitView.device!
+        func makeOutlineRenderTarget(device: MTLDevice, metalKitView: MTKView) -> MTLTexture {
+            let texDesc = MTLTextureDescriptor()
+            texDesc.width          = (metalKitView.currentDrawable?.texture.width)!
+            texDesc.height         = (metalKitView.currentDrawable?.texture.height)!
+            texDesc.depth          = 1
+            texDesc.textureType    = .type2D
+            // texDesc.textureType    = .type2DMultisample
+            // texDesc.sampleCount    = metalKitView.sampleCount
+            // texDesc.storageMode    = .private
+            texDesc.pixelFormat    = metalKitView.colorPixelFormat
 
-        /* { --- make pipeline state --- */
+            texDesc.usage = [MTLTextureUsage.renderTarget, MTLTextureUsage.shaderRead, MTLTextureUsage.shaderWrite]
+
+            texDesc.usage = .unknown
+
+            return device.makeTexture(descriptor: texDesc)!
+        }
+
+        func makeOutlineRenderPassDescriptor(device: MTLDevice, metalKitView: MTKView, renderTarget: MTLTexture) -> MTLRenderPassDescriptor {
+            let desc = MTLRenderPassDescriptor()
+            
+            desc.depthAttachment = metalKitView.currentRenderPassDescriptor!.depthAttachment
+            desc.depthAttachment.loadAction = .clear
+            desc.depthAttachment.storeAction = .store
+            desc.stencilAttachment = metalKitView.currentRenderPassDescriptor!.stencilAttachment
+            desc.stencilAttachment.loadAction = .clear
+            desc.stencilAttachment.storeAction = .store
+            
+            desc.colorAttachments[0].texture = renderTarget
+            desc.colorAttachments[0].loadAction = .clear
+            desc.colorAttachments[0].clearColor = MTLClearColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 1)
+            desc.colorAttachments[0].storeAction = .store
+            
+            return desc
+        }
+
+        func makeOutlinePipelineState(device: MTLDevice, metalKitView: MTKView, rt: MTLTexture) -> MTLRenderPipelineState {
             let library = device.makeDefaultLibrary()!
             let descriptor = MTLRenderPipelineDescriptor()
+            descriptor.vertexFunction                  = library.makeFunction(name: "outlineVertexShader")
+            descriptor.fragmentFunction                = library.makeFunction(name: "outlineFragmentShader")
+            descriptor.colorAttachments[0].pixelFormat = rt.pixelFormat
+            // descriptor.depthAttachmentPixelFormat      = metalKitView.depthStencilPixelFormat
+            descriptor.sampleCount                     = rt.sampleCount
+            return (try? device.makeRenderPipelineState(descriptor: descriptor))!
+        }
+
+        func makeFullscreenPipelineState(device: MTLDevice, metalKitView: MTKView) -> MTLRenderPipelineState {
+            let library = device.makeDefaultLibrary()!
+            let descriptor = MTLRenderPipelineDescriptor()
+
             /* without sampleCount line, your geometry will be pixelated. (enables MSAA) */
-            descriptor.vertexFunction                  = library.makeFunction(name: "vertexShader")
-            descriptor.fragmentFunction                = library.makeFunction(name: "fragmentShader")
+            descriptor.vertexFunction                  = library.makeFunction(name: "fullscreenVertexShader")
+            descriptor.fragmentFunction                = library.makeFunction(name: "fullscreenFragmentShader")
             descriptor.colorAttachments[0].pixelFormat = metalKitView.colorPixelFormat
             descriptor.depthAttachmentPixelFormat      = metalKitView.depthStencilPixelFormat
             descriptor.sampleCount                     = metalKitView.sampleCount
-            self.pipelineState = (try? device.makeRenderPipelineState(descriptor: descriptor))!
-        /* } --- make pipeline state --- */
+            return (try? device.makeRenderPipelineState(descriptor: descriptor))!
+        }
 
-        self.device = device
+        device = metalKitView.device!
         self.commandQueue = device.makeCommandQueue()!
+
+        self.fullscreenPipelineState = makeFullscreenPipelineState(device: device, metalKitView: metalKitView)
+
+        self.outlineRenderTarget = makeOutlineRenderTarget(device: device, metalKitView: metalKitView)
+        self.outlineRenderPassDesc = makeOutlineRenderPassDescriptor(
+            device: device,
+            metalKitView: metalKitView,
+            renderTarget: outlineRenderTarget
+        )
+        self.outlinePipelineState = makeOutlinePipelineState(device: device, metalKitView: metalKitView, rt: outlineRenderTarget)
 
         super.init()
         
@@ -143,6 +205,7 @@ extension Renderer: MTKViewDelegate {
     func drawCpuLine(from a: SIMD3<Float>, to b: SIMD3<Float>, thickness: Float) {
         var mvp: simd_float4x4;
         var aspect_ratio: Float;
+
         /* { ---  make mvp from scratch --- */
             aspect_ratio = Float(viewportSize.x) / Float(viewportSize.y)
             mvp = simd_float4x4.perspective(
@@ -192,32 +255,31 @@ extension Renderer: MTKViewDelegate {
         self.cpu_ibuf.append(UInt16(self.cpu_vbuf.count + 3))
 
         let red = SIMD4<Float>([1.0, 0.0, 0.0, 1.0])
-        self.cpu_vbuf.append(Vertex(pos: SIMD4<Float>(screen_a.x + tx, screen_a.y + ty, screen_a.z, screen_a.w), color: red))
-        self.cpu_vbuf.append(Vertex(pos: SIMD4<Float>(screen_a.x - tx, screen_a.y - ty, screen_a.z, screen_a.w), color: red))
-        self.cpu_vbuf.append(Vertex(pos: SIMD4<Float>(screen_b.x + tx, screen_b.y + ty, screen_b.z, screen_b.w), color: red))
-        self.cpu_vbuf.append(Vertex(pos: SIMD4<Float>(screen_b.x - tx, screen_b.y - ty, screen_b.z, screen_b.w), color: red))
+        self.cpu_vbuf.append(OutlineVertex(pos: SIMD4<Float>(screen_a.x + tx, screen_a.y + ty, screen_a.z, screen_a.w), color: red))
+        self.cpu_vbuf.append(OutlineVertex(pos: SIMD4<Float>(screen_a.x - tx, screen_a.y - ty, screen_a.z, screen_a.w), color: red))
+        self.cpu_vbuf.append(OutlineVertex(pos: SIMD4<Float>(screen_b.x + tx, screen_b.y + ty, screen_b.z, screen_b.w), color: red))
+        self.cpu_vbuf.append(OutlineVertex(pos: SIMD4<Float>(screen_b.x - tx, screen_b.y - ty, screen_b.z, screen_b.w), color: red))
 
         self.cpu_lineCount += 1
     }
+
+    func makeVertices() {
+        let a = SIMD3<Float>([ 0.7, -0.7, 0.0]);
+        let b = SIMD3<Float>([-0.7, -0.7, 0.0]);
+        let c = SIMD3<Float>([-0.7,  0.7, 0.0]);
+        let d = SIMD3<Float>([ 0.7,  0.7, 0.0]);
+
+        self.clearCpuLines();
+        self.drawCpuLine(from: a, to: b, thickness: 0.02);
+        self.drawCpuLine(from: b, to: c, thickness: 0.02);
+        self.drawCpuLine(from: c, to: d, thickness: 0.02);
+        self.drawCpuLine(from: d, to: a, thickness: 0.02);
+    }
     
-    func draw(in view: MTKView) {
-        guard let drawable = view.currentDrawable,
-            let buffer = commandQueue.makeCommandBuffer(),
-            let renderPassDescriptor = view.currentRenderPassDescriptor,
-            let encoder = buffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else { return }
+    func drawOutlinesToRenderTarget(buffer: MTLCommandBuffer) {
+        guard let encoder = buffer.makeRenderCommandEncoder(descriptor: outlineRenderPassDesc) else { return }
 
-        /* { ---  make vertices --- */
-            let a = SIMD3<Float>([ 0.7, -0.7, 0.0]);
-            let b = SIMD3<Float>([-0.7, -0.7, 0.0]);
-            let c = SIMD3<Float>([-0.7,  0.7, 0.0]);
-            let d = SIMD3<Float>([ 0.7,  0.7, 0.0]);
-
-            self.clearCpuLines();
-            self.drawCpuLine(from: a, to: b, thickness: 0.02);
-            self.drawCpuLine(from: b, to: c, thickness: 0.02);
-            self.drawCpuLine(from: c, to: d, thickness: 0.02);
-            self.drawCpuLine(from: d, to: a, thickness: 0.02);
-        /* } --- make vertices */
+        makeVertices()
 
         encoder.setViewport(MTLViewport(
             originX: 0,
@@ -226,7 +288,7 @@ extension Renderer: MTKViewDelegate {
             height: Double(viewportSize.y),
             znear: -1.0, zfar: 1.0
         ));
-        encoder.setRenderPipelineState(pipelineState)
+        encoder.setRenderPipelineState(outlinePipelineState)
 
         if self.gpu_lineCount < self.cpu_lineCount {
             self.allocateBuffers(
@@ -245,6 +307,39 @@ extension Renderer: MTKViewDelegate {
             indexBuffer: self.gpu_ibuf,
             indexBufferOffset: 0
         )
+
+        encoder.endEncoding()
+    }
+    
+    func draw(in view: MTKView) {
+        guard let drawable = view.currentDrawable,
+            let buffer = commandQueue.makeCommandBuffer() else { return }
+        
+        drawOutlinesToRenderTarget(buffer: buffer)
+
+        let kernel = MPSImageGaussianBlur(device: device, sigma: 30.0)
+        kernel.encode(commandBuffer: buffer, inPlaceTexture: &outlineRenderTarget, fallbackCopyAllocator: nil)
+
+        let renderPassDescriptor = view.currentRenderPassDescriptor!
+        let encoder = buffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor)!
+
+        encoder.setViewport(MTLViewport(
+            originX: 0,
+            originY: 0,
+            width: Double(viewportSize.x),
+            height: Double(viewportSize.y),
+            znear: -1.0, zfar: 1.0
+        ));
+        encoder.setRenderPipelineState(fullscreenPipelineState)
+
+        let fullscreenTriangle = [
+            FullscreenVertex(pos: SIMD2<Float>(-1.0,  3.0), uv: SIMD2<Float>(0.0,  2.0)),
+            FullscreenVertex(pos: SIMD2<Float>(-1.0, -1.0), uv: SIMD2<Float>(0.0,  0.0)),
+            FullscreenVertex(pos: SIMD2<Float>( 3.0, -1.0), uv: SIMD2<Float>(2.0,  0.0))
+        ];
+        encoder.setVertexBytes(fullscreenTriangle, length: MemoryLayout<FullscreenVertex>.stride * fullscreenTriangle.count, index: 0)
+        encoder.setFragmentTexture(outlineRenderTarget, index: 0)
+        encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
 
         encoder.endEncoding()
         buffer.present(drawable)
