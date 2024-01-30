@@ -16,7 +16,7 @@
                         <rect key="frame" x="0.0" y="0.0" width="375" height="667"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
-                            <mtkView contentMode="redraw" fixedFrame="YES" colorPixelFormat="BGRA8Unorm" depthStencilPixelFormat="Invalid" translatesAutoresizingMaskIntoConstraints="NO" id="N4c-7s-qmX">
+                            <mtkView contentMode="redraw" fixedFrame="YES" colorPixelFormat="BGRA8Unorm" depthStencilPixelFormat="Invalid" sampleCount="4" translatesAutoresizingMaskIntoConstraints="NO" id="N4c-7s-qmX">
                                 <rect key="frame" x="0.0" y="0.0" width="375" height="667"/>
                                 <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMaxY="YES"/>
                             </mtkView>

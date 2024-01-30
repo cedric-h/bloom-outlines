@@ -76,7 +76,9 @@ class Renderer: NSObject {
 
     /* needed for outline -> renderTarget pipeline */
     var outlineRawTarget: MTLTexture
+    var outlineRawTargetMSAA: MTLTexture
     var outlineBloomTarget: MTLTexture
+    var outlineBloomTargetMSAA: MTLTexture
     var outlineRenderPassDesc: MTLRenderPassDescriptor
     var outlinePipelineState: MTLRenderPipelineState
     var cpu_lineCount: Int = 0
@@ -96,14 +98,24 @@ class Renderer: NSObject {
             texDesc.height         = (metalKitView.currentDrawable?.texture.height)!
             texDesc.depth          = 1
             texDesc.textureType    = .type2D
-            // texDesc.textureType    = .type2DMultisample
-            // texDesc.sampleCount    = metalKitView.sampleCount
-            // texDesc.storageMode    = .private
+            texDesc.sampleCount    = 1
             texDesc.pixelFormat    = metalKitView.colorPixelFormat
 
             texDesc.usage = [MTLTextureUsage.renderTarget, MTLTextureUsage.shaderRead, MTLTextureUsage.shaderWrite]
 
-            texDesc.usage = .unknown
+            return device.makeTexture(descriptor: texDesc)!
+        }
+        
+        func makeOutlineRenderTargetMSAA(device: MTLDevice, metalKitView: MTKView) -> MTLTexture {
+            let texDesc = MTLTextureDescriptor()
+            texDesc.width          = (metalKitView.currentDrawable?.texture.width)!
+            texDesc.height         = (metalKitView.currentDrawable?.texture.height)!
+            texDesc.depth          = 1
+            texDesc.textureType    = .type2DMultisample
+            texDesc.sampleCount    = metalKitView.sampleCount
+            texDesc.pixelFormat    = metalKitView.colorPixelFormat
+
+            texDesc.usage = [MTLTextureUsage.renderTarget, MTLTextureUsage.shaderRead, MTLTextureUsage.shaderWrite]
 
             return device.makeTexture(descriptor: texDesc)!
         }
@@ -112,7 +124,9 @@ class Renderer: NSObject {
             device: MTLDevice,
             metalKitView: MTKView,
             rawTarget: MTLTexture,
-            bloomTarget: MTLTexture
+            rawTargetMSAA: MTLTexture,
+            bloomTarget: MTLTexture,
+            bloomTargetMSAA: MTLTexture
         ) -> MTLRenderPassDescriptor {
             let desc = MTLRenderPassDescriptor()
             
@@ -123,15 +137,17 @@ class Renderer: NSObject {
             desc.stencilAttachment.loadAction = .clear
             desc.stencilAttachment.storeAction = .store
             
-            desc.colorAttachments[0].texture = rawTarget
+            desc.colorAttachments[0].texture = rawTargetMSAA
+            desc.colorAttachments[0].resolveTexture = rawTarget
             desc.colorAttachments[0].loadAction = .clear
             desc.colorAttachments[0].clearColor = MTLClearColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 1)
-            desc.colorAttachments[0].storeAction = .store
+            desc.colorAttachments[0].storeAction = .storeAndMultisampleResolve
 
-            desc.colorAttachments[1].texture = bloomTarget
+            desc.colorAttachments[1].texture = bloomTargetMSAA
+            desc.colorAttachments[1].resolveTexture = bloomTarget
             desc.colorAttachments[1].loadAction = .clear
             desc.colorAttachments[1].clearColor = MTLClearColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 1)
-            desc.colorAttachments[1].storeAction = .store
+            desc.colorAttachments[1].storeAction = .storeAndMultisampleResolve
             
             return desc
         }
@@ -139,19 +155,19 @@ class Renderer: NSObject {
         func makeOutlinePipelineState(
             device: MTLDevice,
             metalKitView: MTKView,
-            rawTarget: MTLTexture,
-            bloomTarget: MTLTexture
+            rawTargetMSAA: MTLTexture,
+            bloomTargetMSAA: MTLTexture
         ) -> MTLRenderPipelineState {
 
             let library = device.makeDefaultLibrary()!
             let descriptor = MTLRenderPipelineDescriptor()
             descriptor.vertexFunction                  = library.makeFunction(name: "outlineVertexShader")
             descriptor.fragmentFunction                = library.makeFunction(name: "outlineFragmentShader")
-            descriptor.colorAttachments[0].pixelFormat = rawTarget.pixelFormat
-            descriptor.colorAttachments[1].pixelFormat = bloomTarget.pixelFormat
+            descriptor.colorAttachments[0].pixelFormat = rawTargetMSAA.pixelFormat
+            descriptor.colorAttachments[1].pixelFormat = bloomTargetMSAA.pixelFormat
 
-            assert(rawTarget.sampleCount == bloomTarget.sampleCount)
-            // descriptor.sampleCount                     = 1
+            assert(rawTargetMSAA.sampleCount == bloomTargetMSAA.sampleCount)
+            descriptor.sampleCount                     = rawTargetMSAA.sampleCount
 
             return (try? device.makeRenderPipelineState(descriptor: descriptor))!
         }
@@ -176,17 +192,21 @@ class Renderer: NSObject {
 
         outlineRawTarget = makeOutlineRenderTarget(device: device, metalKitView: metalKitView)
         outlineBloomTarget = makeOutlineRenderTarget(device: device, metalKitView: metalKitView)
+        outlineRawTargetMSAA = makeOutlineRenderTargetMSAA(device: device, metalKitView: metalKitView)
+        outlineBloomTargetMSAA = makeOutlineRenderTargetMSAA(device: device, metalKitView: metalKitView)
         outlineRenderPassDesc = makeOutlineRenderPassDescriptor(
             device: device,
             metalKitView: metalKitView,
             rawTarget: outlineRawTarget,
-            bloomTarget: outlineBloomTarget
+            rawTargetMSAA: outlineRawTargetMSAA,
+            bloomTarget: outlineBloomTarget,
+            bloomTargetMSAA: outlineBloomTargetMSAA
         )
         outlinePipelineState = makeOutlinePipelineState(
             device: device,
             metalKitView: metalKitView,
-            rawTarget: outlineRawTarget,
-            bloomTarget: outlineBloomTarget
+            rawTargetMSAA: outlineRawTargetMSAA,
+            bloomTargetMSAA: outlineBloomTargetMSAA
         )
 
         super.init()
@@ -285,6 +305,12 @@ extension Renderer: MTKViewDelegate {
         self.cpu_ibuf.append(UInt16(self.cpu_vbuf.count + 2))
         self.cpu_ibuf.append(UInt16(self.cpu_vbuf.count + 1))
         self.cpu_ibuf.append(UInt16(self.cpu_vbuf.count + 3))
+        
+        screen_a.x -= ty*0.5;
+        screen_a.y += tx*0.5;
+        
+        screen_b.x += ty*0.5;
+        screen_b.y -= tx*0.5;
 
         let color = SIMD4<Float>([0.8, 1.0, 0.9, 1.0])
         self.cpu_vbuf.append(OutlineVertex(pos: SIMD4<Float>(screen_a.x + tx, screen_a.y + ty, screen_a.z, screen_a.w), color: color))
