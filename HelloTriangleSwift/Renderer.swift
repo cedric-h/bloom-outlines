@@ -263,61 +263,61 @@ extension Renderer: MTKViewDelegate {
         self.cpu_lineCount += 1
     }
 
-    func makeVertices() {
-        let a = SIMD3<Float>([ 0.7, -0.7, 0.0]);
-        let b = SIMD3<Float>([-0.7, -0.7, 0.0]);
-        let c = SIMD3<Float>([-0.7,  0.7, 0.0]);
-        let d = SIMD3<Float>([ 0.7,  0.7, 0.0]);
-
-        self.clearCpuLines();
-        self.drawCpuLine(from: a, to: b, thickness: 0.02);
-        self.drawCpuLine(from: b, to: c, thickness: 0.02);
-        self.drawCpuLine(from: c, to: d, thickness: 0.02);
-        self.drawCpuLine(from: d, to: a, thickness: 0.02);
-    }
-    
-    func drawOutlinesToRenderTarget(buffer: MTLCommandBuffer) {
-        guard let encoder = buffer.makeRenderCommandEncoder(descriptor: outlineRenderPassDesc) else { return }
-
-        makeVertices()
-
-        encoder.setViewport(MTLViewport(
-            originX: 0,
-            originY: 0,
-            width: Double(viewportSize.x),
-            height: Double(viewportSize.y),
-            znear: -1.0, zfar: 1.0
-        ));
-        encoder.setRenderPipelineState(outlinePipelineState)
-
-        if self.gpu_lineCount < self.cpu_lineCount {
-            self.allocateBuffers(
-                device: device,
-                newLineCapacity: self.cpu_lineCount * 2
-            )
-        }
-        self.gpu_vbuf.contents().copyMemory(from: self.cpu_vbuf, byteCount: self.gpu_vbuf.length)
-        self.gpu_ibuf.contents().copyMemory(from: self.cpu_ibuf, byteCount: self.gpu_ibuf.length)
-
-        encoder.setVertexBuffer(self.gpu_vbuf, offset: 0, index: 0)
-        encoder.drawIndexedPrimitives(
-            type: .triangle,
-            indexCount: self.cpu_lineCount * 6,
-            indexType: .uint16,
-            indexBuffer: self.gpu_ibuf,
-            indexBufferOffset: 0
-        )
-
-        encoder.endEncoding()
-    }
-    
     func draw(in view: MTKView) {
         guard let drawable = view.currentDrawable,
             let buffer = commandQueue.makeCommandBuffer() else { return }
         
+        func drawOutlinesToRenderTarget(buffer: MTLCommandBuffer) {
+            func makeVertices() {
+                let a = SIMD3<Float>([ 0.7, -0.7, 0.0]);
+                let b = SIMD3<Float>([-0.7, -0.7, 0.0]);
+                let c = SIMD3<Float>([-0.7,  0.7, 0.0]);
+                let d = SIMD3<Float>([ 0.7,  0.7, 0.0]);
+
+                self.clearCpuLines();
+                self.drawCpuLine(from: a, to: b, thickness: 0.02);
+                self.drawCpuLine(from: b, to: c, thickness: 0.02);
+                self.drawCpuLine(from: c, to: d, thickness: 0.02);
+                self.drawCpuLine(from: d, to: a, thickness: 0.02);
+            }
+        
+            guard let encoder = buffer.makeRenderCommandEncoder(descriptor: outlineRenderPassDesc) else { return }
+
+            makeVertices()
+
+            encoder.setViewport(MTLViewport(
+                originX: 0,
+                originY: 0,
+                width: Double(viewportSize.x),
+                height: Double(viewportSize.y),
+                znear: -1.0, zfar: 1.0
+            ));
+            encoder.setRenderPipelineState(outlinePipelineState)
+
+            if self.gpu_lineCount < self.cpu_lineCount {
+                self.allocateBuffers(
+                    device: device,
+                    newLineCapacity: self.cpu_lineCount * 2
+                )
+            }
+            self.gpu_vbuf.contents().copyMemory(from: self.cpu_vbuf, byteCount: self.gpu_vbuf.length)
+            self.gpu_ibuf.contents().copyMemory(from: self.cpu_ibuf, byteCount: self.gpu_ibuf.length)
+
+            encoder.setVertexBuffer(self.gpu_vbuf, offset: 0, index: 0)
+            encoder.drawIndexedPrimitives(
+                type: .triangle,
+                indexCount: self.cpu_lineCount * 6,
+                indexType: .uint16,
+                indexBuffer: self.gpu_ibuf,
+                indexBufferOffset: 0
+            )
+
+            encoder.endEncoding()
+        }
+    
         drawOutlinesToRenderTarget(buffer: buffer)
 
-        let kernel = MPSImageGaussianBlur(device: device, sigma: 30.0)
+        let kernel = MPSImageGaussianBlur(device: device, sigma: 10.0)
         kernel.encode(commandBuffer: buffer, inPlaceTexture: &outlineRenderTarget, fallbackCopyAllocator: nil)
 
         let renderPassDescriptor = view.currentRenderPassDescriptor!
