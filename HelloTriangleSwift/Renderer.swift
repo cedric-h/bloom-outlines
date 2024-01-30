@@ -118,7 +118,7 @@ class Renderer: NSObject {
             texDesc.sampleCount    = metalKitView.sampleCount
             texDesc.pixelFormat    = metalKitView.colorPixelFormat
 
-            texDesc.usage = [MTLTextureUsage.renderTarget, MTLTextureUsage.shaderRead, MTLTextureUsage.shaderWrite]
+            texDesc.usage = [MTLTextureUsage.renderTarget]
 
             return device.makeTexture(descriptor: texDesc)!
         }
@@ -144,7 +144,7 @@ class Renderer: NSObject {
             #if MSAA
                 desc.colorAttachments[0].texture = rawTargetMSAA
                 desc.colorAttachments[0].resolveTexture = rawTarget
-                desc.colorAttachments[0].storeAction = .storeAndMultisampleResolve
+                desc.colorAttachments[0].storeAction = .multisampleResolve
             #else
                 desc.colorAttachments[0].texture = rawTarget
                 desc.colorAttachments[0].storeAction = .store
@@ -155,7 +155,7 @@ class Renderer: NSObject {
             #if MSAA
                 desc.colorAttachments[1].texture = bloomTargetMSAA
                 desc.colorAttachments[1].resolveTexture = bloomTarget
-                desc.colorAttachments[1].storeAction = .storeAndMultisampleResolve
+                desc.colorAttachments[1].storeAction = .multisampleResolve
             #else
                 desc.colorAttachments[1].texture = bloomTarget
                 desc.colorAttachments[1].storeAction = .store
@@ -501,7 +501,7 @@ extension Renderer: MTKViewDelegate {
     
         drawOutlinesToRenderTarget(buffer: buffer)
 
-#if false
+#if true
         let kernel = MPSImageGaussianBlur(device: device, sigma: 15.0)
         kernel.encode(commandBuffer: buffer, inPlaceTexture: &outlineBloomTarget, fallbackCopyAllocator: nil)
 #endif
