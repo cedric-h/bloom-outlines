@@ -89,7 +89,7 @@ class Renderer: NSObject {
     var gpu_lineCount: Int = 0
     var gpu_vbuf: MTLBuffer!
     var gpu_ibuf: MTLBuffer!
-    
+
     /* needed for blur pass */
     var fullscreenPipelineState: MTLRenderPipelineState
 
@@ -107,7 +107,7 @@ class Renderer: NSObject {
 
             return device.makeTexture(descriptor: texDesc)!
         }
-        
+
 #if MSAA
         func makeOutlineRenderTargetMSAA(device: MTLDevice, metalKitView: MTKView) -> MTLTexture {
             let texDesc = MTLTextureDescriptor()
@@ -133,14 +133,14 @@ class Renderer: NSObject {
             bloomTargetMSAA: MTLTexture
         ) -> MTLRenderPassDescriptor {
             let desc = MTLRenderPassDescriptor()
-            
+
             desc.depthAttachment = metalKitView.currentRenderPassDescriptor!.depthAttachment
             desc.depthAttachment.loadAction = .clear
             desc.depthAttachment.storeAction = .store
             desc.stencilAttachment = metalKitView.currentRenderPassDescriptor!.stencilAttachment
             desc.stencilAttachment.loadAction = .clear
             desc.stencilAttachment.storeAction = .store
-            
+
             #if MSAA
                 desc.colorAttachments[0].texture = rawTargetMSAA
                 desc.colorAttachments[0].resolveTexture = rawTarget
@@ -162,7 +162,7 @@ class Renderer: NSObject {
             #endif
             desc.colorAttachments[1].loadAction = .clear
             desc.colorAttachments[1].clearColor = MTLClearColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 0.0)
-            
+
             return desc
         }
 
@@ -179,7 +179,7 @@ class Renderer: NSObject {
             descriptor.fragmentFunction                = library.makeFunction(name: "outlineFragmentShader")
             descriptor.colorAttachments[0].pixelFormat = rawTargetMSAA.pixelFormat
             descriptor.colorAttachments[1].pixelFormat = bloomTargetMSAA.pixelFormat
-            
+
             descriptor.colorAttachments[0].isBlendingEnabled = true
             descriptor.colorAttachments[0].rgbBlendOperation = .add
             descriptor.colorAttachments[0].alphaBlendOperation = .add
@@ -187,7 +187,7 @@ class Renderer: NSObject {
             descriptor.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
             descriptor.colorAttachments[0].sourceAlphaBlendFactor = .one
             descriptor.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
-            
+
             descriptor.colorAttachments[1].isBlendingEnabled = true
             descriptor.colorAttachments[1].rgbBlendOperation = .add
             descriptor.colorAttachments[1].alphaBlendOperation = .add
@@ -257,7 +257,7 @@ class Renderer: NSObject {
 #endif
 
         super.init()
-        
+
         allocateBuffers(device: device, newLineCapacity: 128)
     }
 
@@ -295,13 +295,13 @@ extension Renderer: MTKViewDelegate {
         self.cpu_vbuf = []
         self.cpu_lineCount = 0
     }
-    
-    /* it's useful to have this as a function (instead of just appending to array) because we have 
+
+    /* it's useful to have this as a function (instead of just appending to array) because we have
      * a single place to change Index Size, (can do UInt32 for more than 65k vertices), or debug issues */
     func ibufCpuQuad(_ v0: UInt16, _ v1: UInt16, _ v2: UInt16, _ v3: UInt16) {
         self.cpu_ibuf.append(contentsOf: [v0, v1, v2, v2, v1, v3])
     }
-    
+
     func drawCpuLine(from a: SIMD3<Float>, to b: SIMD3<Float>, thickness: Float, color: SIMD4<Float>) {
         var mvp: simd_float4x4;
         var aspect_ratio: Float;
@@ -346,12 +346,12 @@ extension Renderer: MTKViewDelegate {
         /* perpendicular to "a -> b" */
         let nx = -(screen_b.y - screen_a.y);
         let ny =  (screen_b.x - screen_a.x) * aspect_ratio;
-        
+
         /* normalize nx/ny for constant thickness */
         let tlen = (nx * nx + ny * ny).squareRoot() / (thickness * 0.5);
         let tx = nx / tlen;
         let ty = ny / tlen * aspect_ratio;
-        
+
         ibufCpuQuad(
             UInt16(self.cpu_vbuf.count + 0),
             UInt16(self.cpu_vbuf.count + 1),
@@ -362,7 +362,7 @@ extension Renderer: MTKViewDelegate {
         #if false
         screen_a.x -= ty*0.5;
         screen_a.y += tx*0.5;
-        
+
         screen_b.x += ty*0.5;
         screen_b.y -= tx*0.5;
         #endif
@@ -378,7 +378,7 @@ extension Renderer: MTKViewDelegate {
     func draw(in view: MTKView) {
         guard let drawable = view.currentDrawable,
             let buffer = commandQueue.makeCommandBuffer() else { return }
-        
+
         func drawOutlinesToRenderTarget(buffer: MTLCommandBuffer) {
             self.clearCpuLines();
 #if false
@@ -389,7 +389,7 @@ extension Renderer: MTKViewDelegate {
                 for i in 0..<10 {
                     let modelX = cos(Float(i) / 10.0 * Float.pi*2) * 5.0
                     let modelY = sin(Float(i) / 10.0 * Float.pi*2) * 5.0
-                    
+
                     /* SIDE_LENGTH doesn't include BORDER_RADIUS, so total square size is sum of these two */
                     let BORDER_RADIUS: Float = 0.35
                     let SIDE_LENGTH: Float = 0.7
@@ -401,12 +401,12 @@ extension Renderer: MTKViewDelegate {
                             cos(Float(i) / 16.0 * Float.pi*2) * BORDER_RADIUS,
                             sin(Float(i) / 16.0 * Float.pi*2) * BORDER_RADIUS
                         );
-                        
+
                         p.x += ((p.x < 0) ? -1 : 1) * SIDE_LENGTH * 0.5
                         p.y += ((p.y < 0) ? -1 : 1) * SIDE_LENGTH * 0.5
-                        
+
                         let v = SIMD3<Float>([modelX + p.x, p.y, modelY])
-                        
+
                         /* connect this point to the last one */
                         if let lv = lastV {
                             self.drawCpuLine(from: v, to: lv, thickness: 0.02, color: color);
@@ -416,7 +416,7 @@ extension Renderer: MTKViewDelegate {
                         }
                         lastV = v
                     }
-                    
+
                     /* close circle */
                     if let a = firstV,
                        let b = lastV {
@@ -442,29 +442,29 @@ extension Renderer: MTKViewDelegate {
                         (c, d),
                         (d, a),
                     ]
-                    
+
                     var first = true
                     let vertA0 = UInt16(self.cpu_vbuf.count)
                     let vertA1 = UInt16(self.cpu_vbuf.count + 1)
                     for (from, to) in contour {
                         self.drawCpuLine(from: from, to: to, thickness: 0.02, color: color);
-                        
+
                         if first {
                         } else {
                             let v = UInt16(self.cpu_vbuf.count - 6)
                             ibufCpuQuad(v + 0, v + 1, v + 2, v + 3)
                         }
-                        
+
                         first = false
                     }
                     let vertZ0 = UInt16(self.cpu_vbuf.count - 2)
                     let vertZ1 = UInt16(self.cpu_vbuf.count - 1)
-                    
+
                     ibufCpuQuad(vertA0, vertA1, vertZ0, vertZ1)
                 }
             }
 #endif
-        
+
             guard let encoder = buffer.makeRenderCommandEncoder(descriptor: outlineRenderPassDesc) else { return }
 
             makeVertices()
@@ -498,7 +498,7 @@ extension Renderer: MTKViewDelegate {
 
             encoder.endEncoding()
         }
-    
+
         drawOutlinesToRenderTarget(buffer: buffer)
 
 #if true
