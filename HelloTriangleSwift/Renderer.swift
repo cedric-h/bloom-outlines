@@ -217,7 +217,7 @@ class Renderer: NSObject {
     func allocateBuffers(device: MTLDevice, newLineCapacity: Int) {
         self.gpu_lineCount = newLineCapacity
         self.gpu_vbuf = device.makeBuffer(
-            length: MemoryLayout<SIMD3<Float>>.stride * newLineCapacity * 4,
+            length: MemoryLayout<OutlineVertex>.stride * newLineCapacity * 4,
             options: MTLResourceOptions.cpuCacheModeWriteCombined
         )
         self.gpu_ibuf = device.makeBuffer(
@@ -328,19 +328,41 @@ extension Renderer: MTKViewDelegate {
         func drawOutlinesToRenderTarget(buffer: MTLCommandBuffer) {
             self.clearCpuLines();
             func makeVertices() {
+                /* make 10 "windows" arranged in a circle */
                 for i in 0..<10 {
-                    let x = cos(Float(i) / 10.0 * Float.pi*2) * 5.0
-                    let y = sin(Float(i) / 10.0 * Float.pi*2) * 5.0
+                    let modelX = cos(Float(i) / 10.0 * Float.pi*2) * 5.0
+                    let modelY = sin(Float(i) / 10.0 * Float.pi*2) * 5.0
+                    
+                    /* SIDE_LENGTH doesn't include BORDER_RADIUS, so total square size is sum of these two */
+                    let BORDER_RADIUS = 0.35
+                    let SIDE_LENGTH = 0.35
 
-                    let a = SIMD3<Float>([x +  0.7, -0.7, y]);
-                    let b = SIMD3<Float>([x + -0.7, -0.7, y]);
-                    let c = SIMD3<Float>([x + -0.7,  0.7, y]);
-                    let d = SIMD3<Float>([x +  0.7,  0.7, y]);
-
-                    self.drawCpuLine(from: a, to: b, thickness: 0.02);
-                    self.drawCpuLine(from: b, to: c, thickness: 0.02);
-                    self.drawCpuLine(from: c, to: d, thickness: 0.02);
-                    self.drawCpuLine(from: d, to: a, thickness: 0.02);
+                    var firstV: Optional<SIMD3<Float>> = nil
+                    var lastV: Optional<SIMD3<Float>> = nil
+                    for i in 0..<20 {
+                        var x = cos(Float(i) / 20.0 * Float.pi*2) * BORDER_RADIUS
+                        var y = sin(Float(i) / 20.0 * Float.pi*2) * BORDER_RADIUS
+                        
+                        x += sign(x) * SIDE_LENGTH
+                        y += sign(y) * BORDER_RADIUS
+                        
+                        let v = SIMD3<Float>([modelX + x, y, modeLY])
+                        
+                        /* connect this point to the last one */
+                        if let lv = lastV {
+                            self.drawCpuLine(from: v, to: lv, thickness: 0.02);
+                        } else {
+                            /* store the first one so we can close the gap at the end */
+                            firstV = v
+                        }
+                        lastV = v
+                    }
+                    
+                    /* close circle */
+                    if let a = firstV,
+                       let b = lastV {
+                        self.drawCpuLine(from: a, to: b, thickness: 0.02)
+                    }
                 }
             }
         
@@ -380,7 +402,7 @@ extension Renderer: MTKViewDelegate {
     
         drawOutlinesToRenderTarget(buffer: buffer)
 
-        let kernel = MPSImageGaussianBlur(device: device, sigma: 25.0)
+        let kernel = MPSImageGaussianBlur(device: device, sigma: 15.0)
         kernel.encode(commandBuffer: buffer, inPlaceTexture: &outlineBloomTarget, fallbackCopyAllocator: nil)
 
         let renderPassDescriptor = view.currentRenderPassDescriptor!
