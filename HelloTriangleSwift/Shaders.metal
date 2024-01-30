@@ -54,6 +54,6 @@ fragment float4 fullscreenFragmentShader(
     constexpr sampler textureSampler (mag_filter::linear,
                                       min_filter::linear);
     
-    return colorTexture.sample(textureSampler, in.uv);
+    return 3.0*colorTexture.sample(textureSampler, in.uv);
 }
 /* =================== FULLSCREEN RENDER SHADERS =================== */

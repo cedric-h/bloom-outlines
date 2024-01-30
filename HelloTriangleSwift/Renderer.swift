@@ -224,20 +224,25 @@ extension Renderer: MTKViewDelegate {
         var screen_a = simd_mul(mvp, SIMD4<Float>([a.x, a.y, a.z, 1.0]));
         var screen_b = simd_mul(mvp, SIMD4<Float>([b.x, b.y, b.z, 1.0]));
 
-        /* here we account for the "perspective divide" that the GPU does under the hood;
-         * without this, the lines will not stay the same thickness when the camera is far away */
+        /* without this block, lines will get smaller
+         * the farther you are from the camera */
         if true {
-            screen_a.x /= screen_a.w;
-            screen_a.y /= screen_a.w;
-            screen_a.z /= screen_a.w;
-            screen_a.w = 1;
-
-            screen_b.x /= screen_b.w;
-            screen_b.y /= screen_b.w;
-            screen_b.z /= screen_b.w;
-            screen_b.w = 1;
+            /* here we account for the "perspective divide" that the GPU does under the hood;
+             * without this, the lines will not stay the same thickness when the camera is far away */
+            if screen_a.w > 0 {
+                screen_a.x /= screen_a.w;
+                screen_a.y /= screen_a.w;
+                screen_a.z /= screen_a.w;
+                screen_a.w = 1;
+            }
+            if screen_b.w > 0 {
+                screen_b.x /= screen_b.w;
+                screen_b.y /= screen_b.w;
+                screen_b.z /= screen_b.w;
+                screen_b.w = 1;
+            }
         }
-        
+
         /* perpendicular to "a -> b" */
         let nx = -(screen_b.y - screen_a.y);
         let ny =  (screen_b.x - screen_a.x) * aspect_ratio;
@@ -268,17 +273,22 @@ extension Renderer: MTKViewDelegate {
             let buffer = commandQueue.makeCommandBuffer() else { return }
         
         func drawOutlinesToRenderTarget(buffer: MTLCommandBuffer) {
+            self.clearCpuLines();
             func makeVertices() {
-                let a = SIMD3<Float>([ 0.7, -0.7, 0.0]);
-                let b = SIMD3<Float>([-0.7, -0.7, 0.0]);
-                let c = SIMD3<Float>([-0.7,  0.7, 0.0]);
-                let d = SIMD3<Float>([ 0.7,  0.7, 0.0]);
+                for i in 0..<10 {
+                    let x = cos(Float(i) / 10.0 * Float.pi*2) * 5.0
+                    let y = sin(Float(i) / 10.0 * Float.pi*2) * 5.0
 
-                self.clearCpuLines();
-                self.drawCpuLine(from: a, to: b, thickness: 0.02);
-                self.drawCpuLine(from: b, to: c, thickness: 0.02);
-                self.drawCpuLine(from: c, to: d, thickness: 0.02);
-                self.drawCpuLine(from: d, to: a, thickness: 0.02);
+                    let a = SIMD3<Float>([x +  0.7, -0.7, y]);
+                    let b = SIMD3<Float>([x + -0.7, -0.7, y]);
+                    let c = SIMD3<Float>([x + -0.7,  0.7, y]);
+                    let d = SIMD3<Float>([x +  0.7,  0.7, y]);
+
+                    self.drawCpuLine(from: a, to: b, thickness: 0.02);
+                    self.drawCpuLine(from: b, to: c, thickness: 0.02);
+                    self.drawCpuLine(from: c, to: d, thickness: 0.02);
+                    self.drawCpuLine(from: d, to: a, thickness: 0.02);
+                }
             }
         
             guard let encoder = buffer.makeRenderCommandEncoder(descriptor: outlineRenderPassDesc) else { return }
@@ -317,7 +327,7 @@ extension Renderer: MTKViewDelegate {
     
         drawOutlinesToRenderTarget(buffer: buffer)
 
-        let kernel = MPSImageGaussianBlur(device: device, sigma: 10.0)
+        let kernel = MPSImageGaussianBlur(device: device, sigma: 20.0)
         kernel.encode(commandBuffer: buffer, inPlaceTexture: &outlineRenderTarget, fallbackCopyAllocator: nil)
 
         let renderPassDescriptor = view.currentRenderPassDescriptor!
