@@ -75,7 +75,8 @@ class Renderer: NSObject {
     var cameraZoom: Float = 1.0
 
     /* needed for outline -> renderTarget pipeline */
-    var outlineRenderTarget: MTLTexture
+    var outlineRawTarget: MTLTexture
+    var outlineBloomTarget: MTLTexture
     var outlineRenderPassDesc: MTLRenderPassDescriptor
     var outlinePipelineState: MTLRenderPipelineState
     var cpu_lineCount: Int = 0
@@ -107,7 +108,12 @@ class Renderer: NSObject {
             return device.makeTexture(descriptor: texDesc)!
         }
 
-        func makeOutlineRenderPassDescriptor(device: MTLDevice, metalKitView: MTKView, renderTarget: MTLTexture) -> MTLRenderPassDescriptor {
+        func makeOutlineRenderPassDescriptor(
+            device: MTLDevice,
+            metalKitView: MTKView,
+            rawTarget: MTLTexture,
+            bloomTarget: MTLTexture
+        ) -> MTLRenderPassDescriptor {
             let desc = MTLRenderPassDescriptor()
             
             desc.depthAttachment = metalKitView.currentRenderPassDescriptor!.depthAttachment
@@ -117,22 +123,36 @@ class Renderer: NSObject {
             desc.stencilAttachment.loadAction = .clear
             desc.stencilAttachment.storeAction = .store
             
-            desc.colorAttachments[0].texture = renderTarget
+            desc.colorAttachments[0].texture = rawTarget
             desc.colorAttachments[0].loadAction = .clear
             desc.colorAttachments[0].clearColor = MTLClearColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 1)
             desc.colorAttachments[0].storeAction = .store
+
+            desc.colorAttachments[1].texture = bloomTarget
+            desc.colorAttachments[1].loadAction = .clear
+            desc.colorAttachments[1].clearColor = MTLClearColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 1)
+            desc.colorAttachments[1].storeAction = .store
             
             return desc
         }
 
-        func makeOutlinePipelineState(device: MTLDevice, metalKitView: MTKView, rt: MTLTexture) -> MTLRenderPipelineState {
+        func makeOutlinePipelineState(
+            device: MTLDevice,
+            metalKitView: MTKView,
+            rawTarget: MTLTexture,
+            bloomTarget: MTLTexture
+        ) -> MTLRenderPipelineState {
+
             let library = device.makeDefaultLibrary()!
             let descriptor = MTLRenderPipelineDescriptor()
             descriptor.vertexFunction                  = library.makeFunction(name: "outlineVertexShader")
             descriptor.fragmentFunction                = library.makeFunction(name: "outlineFragmentShader")
-            descriptor.colorAttachments[0].pixelFormat = rt.pixelFormat
-            // descriptor.depthAttachmentPixelFormat      = metalKitView.depthStencilPixelFormat
-            descriptor.sampleCount                     = rt.sampleCount
+            descriptor.colorAttachments[0].pixelFormat = rawTarget.pixelFormat
+            descriptor.colorAttachments[1].pixelFormat = bloomTarget.pixelFormat
+
+            assert(rawTarget.sampleCount == bloomTarget.sampleCount)
+            // descriptor.sampleCount                     = 1
+
             return (try? device.makeRenderPipelineState(descriptor: descriptor))!
         }
 
@@ -150,17 +170,24 @@ class Renderer: NSObject {
         }
 
         device = metalKitView.device!
-        self.commandQueue = device.makeCommandQueue()!
+        commandQueue = device.makeCommandQueue()!
 
-        self.fullscreenPipelineState = makeFullscreenPipelineState(device: device, metalKitView: metalKitView)
+        fullscreenPipelineState = makeFullscreenPipelineState(device: device, metalKitView: metalKitView)
 
-        self.outlineRenderTarget = makeOutlineRenderTarget(device: device, metalKitView: metalKitView)
-        self.outlineRenderPassDesc = makeOutlineRenderPassDescriptor(
+        outlineRawTarget = makeOutlineRenderTarget(device: device, metalKitView: metalKitView)
+        outlineBloomTarget = makeOutlineRenderTarget(device: device, metalKitView: metalKitView)
+        outlineRenderPassDesc = makeOutlineRenderPassDescriptor(
             device: device,
             metalKitView: metalKitView,
-            renderTarget: outlineRenderTarget
+            rawTarget: outlineRawTarget,
+            bloomTarget: outlineBloomTarget
         )
-        self.outlinePipelineState = makeOutlinePipelineState(device: device, metalKitView: metalKitView, rt: outlineRenderTarget)
+        outlinePipelineState = makeOutlinePipelineState(
+            device: device,
+            metalKitView: metalKitView,
+            rawTarget: outlineRawTarget,
+            bloomTarget: outlineBloomTarget
+        )
 
         super.init()
         
@@ -259,11 +286,11 @@ extension Renderer: MTKViewDelegate {
         self.cpu_ibuf.append(UInt16(self.cpu_vbuf.count + 1))
         self.cpu_ibuf.append(UInt16(self.cpu_vbuf.count + 3))
 
-        let red = SIMD4<Float>([1.0, 0.0, 0.0, 1.0])
-        self.cpu_vbuf.append(OutlineVertex(pos: SIMD4<Float>(screen_a.x + tx, screen_a.y + ty, screen_a.z, screen_a.w), color: red))
-        self.cpu_vbuf.append(OutlineVertex(pos: SIMD4<Float>(screen_a.x - tx, screen_a.y - ty, screen_a.z, screen_a.w), color: red))
-        self.cpu_vbuf.append(OutlineVertex(pos: SIMD4<Float>(screen_b.x + tx, screen_b.y + ty, screen_b.z, screen_b.w), color: red))
-        self.cpu_vbuf.append(OutlineVertex(pos: SIMD4<Float>(screen_b.x - tx, screen_b.y - ty, screen_b.z, screen_b.w), color: red))
+        let color = SIMD4<Float>([0.8, 1.0, 0.9, 1.0])
+        self.cpu_vbuf.append(OutlineVertex(pos: SIMD4<Float>(screen_a.x + tx, screen_a.y + ty, screen_a.z, screen_a.w), color: color))
+        self.cpu_vbuf.append(OutlineVertex(pos: SIMD4<Float>(screen_a.x - tx, screen_a.y - ty, screen_a.z, screen_a.w), color: color))
+        self.cpu_vbuf.append(OutlineVertex(pos: SIMD4<Float>(screen_b.x + tx, screen_b.y + ty, screen_b.z, screen_b.w), color: color))
+        self.cpu_vbuf.append(OutlineVertex(pos: SIMD4<Float>(screen_b.x - tx, screen_b.y - ty, screen_b.z, screen_b.w), color: color))
 
         self.cpu_lineCount += 1
     }
@@ -327,8 +354,8 @@ extension Renderer: MTKViewDelegate {
     
         drawOutlinesToRenderTarget(buffer: buffer)
 
-        let kernel = MPSImageGaussianBlur(device: device, sigma: 20.0)
-        kernel.encode(commandBuffer: buffer, inPlaceTexture: &outlineRenderTarget, fallbackCopyAllocator: nil)
+        let kernel = MPSImageGaussianBlur(device: device, sigma: 25.0)
+        kernel.encode(commandBuffer: buffer, inPlaceTexture: &outlineBloomTarget, fallbackCopyAllocator: nil)
 
         let renderPassDescriptor = view.currentRenderPassDescriptor!
         let encoder = buffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor)!
@@ -347,8 +374,13 @@ extension Renderer: MTKViewDelegate {
             FullscreenVertex(pos: SIMD2<Float>(-1.0, -1.0), uv: SIMD2<Float>(0.0,  0.0)),
             FullscreenVertex(pos: SIMD2<Float>( 3.0, -1.0), uv: SIMD2<Float>(2.0,  0.0))
         ];
-        encoder.setVertexBytes(fullscreenTriangle, length: MemoryLayout<FullscreenVertex>.stride * fullscreenTriangle.count, index: 0)
-        encoder.setFragmentTexture(outlineRenderTarget, index: 0)
+        encoder.setVertexBytes(
+            fullscreenTriangle,
+            length: MemoryLayout<FullscreenVertex>.stride * fullscreenTriangle.count,
+            index: 0
+        )
+        encoder.setFragmentTexture(outlineRawTarget, index: 0)
+        encoder.setFragmentTexture(outlineBloomTarget, index: 1)
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
 
         encoder.endEncoding()

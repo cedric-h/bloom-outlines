@@ -22,10 +22,15 @@ vertex OutlineRasterizerData outlineVertexShader(
     return out;
 }
 
-fragment float4 outlineFragmentShader(
+struct OutlineFragmentOut {
+    float4 raw   [[ color(0) ]];
+    float4 bloom [[ color(1) ]];
+};
+
+fragment OutlineFragmentOut outlineFragmentShader(
     OutlineRasterizerData in [[stage_in]]
 ) {
-    return in.color;
+    return (OutlineFragmentOut) { .raw = in.color, .bloom = in.color };
 }
 /* =================== OUTLINE RENDER SHADERS =================== */
 
@@ -49,11 +54,12 @@ vertex FullscreenRasterizerData fullscreenVertexShader(
 
 fragment float4 fullscreenFragmentShader(
     FullscreenRasterizerData in [[stage_in]],
-    texture2d<float, access::sample> colorTexture [[ texture(0) ]]
+    texture2d<float, access::sample> rawTexture [[ texture(0) ]],
+    texture2d<float, access::sample> bloomTexture [[ texture(1) ]]
 ) {
-    constexpr sampler textureSampler (mag_filter::linear,
+    constexpr sampler ts (mag_filter::linear,
                                       min_filter::linear);
     
-    return 3.0*colorTexture.sample(textureSampler, in.uv);
+    return 4.0*bloomTexture.sample(ts, in.uv) + 0.25*rawTexture.sample(ts, in.uv);
 }
 /* =================== FULLSCREEN RENDER SHADERS =================== */
