@@ -76,9 +76,9 @@ class Renderer: NSObject {
 
     /* needed for outline -> renderTarget pipeline */
     var outlineRawTarget: MTLTexture
-    var outlineRawTargetMSAA: MTLTexture
+    // var outlineRawTargetMSAA: MTLTexture
     var outlineBloomTarget: MTLTexture
-    var outlineBloomTargetMSAA: MTLTexture
+    // var outlineBloomTargetMSAA: MTLTexture
     var outlineRenderPassDesc: MTLRenderPassDescriptor
     var outlinePipelineState: MTLRenderPipelineState
     var cpu_lineCount: Int = 0
@@ -137,17 +137,21 @@ class Renderer: NSObject {
             desc.stencilAttachment.loadAction = .clear
             desc.stencilAttachment.storeAction = .store
             
-            desc.colorAttachments[0].texture = rawTargetMSAA
-            desc.colorAttachments[0].resolveTexture = rawTarget
+            // desc.colorAttachments[0].texture = rawTargetMSAA
+            // desc.colorAttachments[0].resolveTexture = rawTarget
+            desc.colorAttachments[0].texture = rawTarget
             desc.colorAttachments[0].loadAction = .clear
-            desc.colorAttachments[0].clearColor = MTLClearColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 1)
-            desc.colorAttachments[0].storeAction = .storeAndMultisampleResolve
+            desc.colorAttachments[0].clearColor = MTLClearColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 0.0)
+            desc.colorAttachments[0].storeAction = .store
+            // desc.colorAttachments[0].storeAction = .storeAndMultisampleResolve
 
-            desc.colorAttachments[1].texture = bloomTargetMSAA
-            desc.colorAttachments[1].resolveTexture = bloomTarget
+            // desc.colorAttachments[1].texture = bloomTargetMSAA
+            // desc.colorAttachments[1].resolveTexture = bloomTarget
+            desc.colorAttachments[1].texture = bloomTarget
             desc.colorAttachments[1].loadAction = .clear
-            desc.colorAttachments[1].clearColor = MTLClearColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 1)
-            desc.colorAttachments[1].storeAction = .storeAndMultisampleResolve
+            desc.colorAttachments[1].clearColor = MTLClearColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 0.0)
+            desc.colorAttachments[1].storeAction = .store
+            // desc.colorAttachments[1].storeAction = .storeAndMultisampleResolve
             
             return desc
         }
@@ -165,6 +169,22 @@ class Renderer: NSObject {
             descriptor.fragmentFunction                = library.makeFunction(name: "outlineFragmentShader")
             descriptor.colorAttachments[0].pixelFormat = rawTargetMSAA.pixelFormat
             descriptor.colorAttachments[1].pixelFormat = bloomTargetMSAA.pixelFormat
+            
+            descriptor.colorAttachments[0].isBlendingEnabled = true
+            descriptor.colorAttachments[0].rgbBlendOperation = .add
+            descriptor.colorAttachments[0].alphaBlendOperation = .add
+            descriptor.colorAttachments[0].sourceRGBBlendFactor = .one
+            descriptor.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
+            descriptor.colorAttachments[0].sourceAlphaBlendFactor = .one
+            descriptor.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
+            
+            descriptor.colorAttachments[1].isBlendingEnabled = true
+            descriptor.colorAttachments[1].rgbBlendOperation = .add
+            descriptor.colorAttachments[1].alphaBlendOperation = .add
+            descriptor.colorAttachments[1].sourceRGBBlendFactor = .one
+            descriptor.colorAttachments[1].destinationRGBBlendFactor = .oneMinusSourceAlpha
+            descriptor.colorAttachments[1].sourceAlphaBlendFactor = .one
+            descriptor.colorAttachments[1].destinationAlphaBlendFactor = .oneMinusSourceAlpha
 
             assert(rawTargetMSAA.sampleCount == bloomTargetMSAA.sampleCount)
             descriptor.sampleCount                     = rawTargetMSAA.sampleCount
@@ -192,21 +212,21 @@ class Renderer: NSObject {
 
         outlineRawTarget = makeOutlineRenderTarget(device: device, metalKitView: metalKitView)
         outlineBloomTarget = makeOutlineRenderTarget(device: device, metalKitView: metalKitView)
-        outlineRawTargetMSAA = makeOutlineRenderTargetMSAA(device: device, metalKitView: metalKitView)
-        outlineBloomTargetMSAA = makeOutlineRenderTargetMSAA(device: device, metalKitView: metalKitView)
+        // outlineRawTargetMSAA = makeOutlineRenderTargetMSAA(device: device, metalKitView: metalKitView)
+        // outlineBloomTargetMSAA = makeOutlineRenderTargetMSAA(device: device, metalKitView: metalKitView)
         outlineRenderPassDesc = makeOutlineRenderPassDescriptor(
             device: device,
             metalKitView: metalKitView,
             rawTarget: outlineRawTarget,
-            rawTargetMSAA: outlineRawTargetMSAA,
+            rawTargetMSAA: outlineRawTarget,
             bloomTarget: outlineBloomTarget,
-            bloomTargetMSAA: outlineBloomTargetMSAA
+            bloomTargetMSAA: outlineBloomTarget
         )
         outlinePipelineState = makeOutlinePipelineState(
             device: device,
             metalKitView: metalKitView,
-            rawTargetMSAA: outlineRawTargetMSAA,
-            bloomTargetMSAA: outlineBloomTargetMSAA
+            rawTargetMSAA: outlineRawTarget,
+            bloomTargetMSAA: outlineBloomTarget
         )
 
         super.init()
@@ -249,7 +269,13 @@ extension Renderer: MTKViewDelegate {
         self.cpu_lineCount = 0
     }
     
-    func drawCpuLine(from a: SIMD3<Float>, to b: SIMD3<Float>, thickness: Float) {
+    /* it's useful to have this as a function (instead of just appending to array) because we have 
+     * a single place to change Index Size, (can do UInt32 for more than 65k vertices), or debug issues */
+    func ibufCpuQuad(_ v0: UInt16, _ v1: UInt16, _ v2: UInt16, _ v3: UInt16) {
+        self.cpu_ibuf.append(contentsOf: [v0, v1, v2, v2, v1, v3])
+    }
+    
+    func drawCpuLine(from a: SIMD3<Float>, to b: SIMD3<Float>, thickness: Float, color: SIMD4<Float>) {
         var mvp: simd_float4x4;
         var aspect_ratio: Float;
 
@@ -299,20 +325,21 @@ extension Renderer: MTKViewDelegate {
         let tx = nx / tlen;
         let ty = ny / tlen * aspect_ratio;
         
-        self.cpu_ibuf.append(UInt16(self.cpu_vbuf.count + 0))
-        self.cpu_ibuf.append(UInt16(self.cpu_vbuf.count + 1))
-        self.cpu_ibuf.append(UInt16(self.cpu_vbuf.count + 2))
-        self.cpu_ibuf.append(UInt16(self.cpu_vbuf.count + 2))
-        self.cpu_ibuf.append(UInt16(self.cpu_vbuf.count + 1))
-        self.cpu_ibuf.append(UInt16(self.cpu_vbuf.count + 3))
-        
+        ibufCpuQuad(
+            UInt16(self.cpu_vbuf.count + 0),
+            UInt16(self.cpu_vbuf.count + 1),
+            UInt16(self.cpu_vbuf.count + 2),
+            UInt16(self.cpu_vbuf.count + 3)
+        )
+
+        #if false
         screen_a.x -= ty*0.5;
         screen_a.y += tx*0.5;
         
         screen_b.x += ty*0.5;
         screen_b.y -= tx*0.5;
+        #endif
 
-        let color = SIMD4<Float>([0.8, 1.0, 0.9, 1.0])
         self.cpu_vbuf.append(OutlineVertex(pos: SIMD4<Float>(screen_a.x + tx, screen_a.y + ty, screen_a.z, screen_a.w), color: color))
         self.cpu_vbuf.append(OutlineVertex(pos: SIMD4<Float>(screen_a.x - tx, screen_a.y - ty, screen_a.z, screen_a.w), color: color))
         self.cpu_vbuf.append(OutlineVertex(pos: SIMD4<Float>(screen_b.x + tx, screen_b.y + ty, screen_b.z, screen_b.w), color: color))
@@ -327,30 +354,35 @@ extension Renderer: MTKViewDelegate {
         
         func drawOutlinesToRenderTarget(buffer: MTLCommandBuffer) {
             self.clearCpuLines();
+#if false
             func makeVertices() {
+                let color = SIMD4<Float>([0.8, 1.0, 0.9, 1.0])
+
                 /* make 10 "windows" arranged in a circle */
                 for i in 0..<10 {
                     let modelX = cos(Float(i) / 10.0 * Float.pi*2) * 5.0
                     let modelY = sin(Float(i) / 10.0 * Float.pi*2) * 5.0
                     
                     /* SIDE_LENGTH doesn't include BORDER_RADIUS, so total square size is sum of these two */
-                    let BORDER_RADIUS = 0.35
-                    let SIDE_LENGTH = 0.35
+                    let BORDER_RADIUS: Float = 0.35
+                    let SIDE_LENGTH: Float = 0.7
 
                     var firstV: Optional<SIMD3<Float>> = nil
                     var lastV: Optional<SIMD3<Float>> = nil
-                    for i in 0..<20 {
-                        var x = cos(Float(i) / 20.0 * Float.pi*2) * BORDER_RADIUS
-                        var y = sin(Float(i) / 20.0 * Float.pi*2) * BORDER_RADIUS
+                    for i in 0..<16 {
+                        var p = SIMD2<Float>(
+                            cos(Float(i) / 16.0 * Float.pi*2) * BORDER_RADIUS,
+                            sin(Float(i) / 16.0 * Float.pi*2) * BORDER_RADIUS
+                        );
                         
-                        x += sign(x) * SIDE_LENGTH
-                        y += sign(y) * BORDER_RADIUS
+                        p.x += ((p.x < 0) ? -1 : 1) * SIDE_LENGTH * 0.5
+                        p.y += ((p.y < 0) ? -1 : 1) * SIDE_LENGTH * 0.5
                         
-                        let v = SIMD3<Float>([modelX + x, y, modeLY])
+                        let v = SIMD3<Float>([modelX + p.x, p.y, modelY])
                         
                         /* connect this point to the last one */
                         if let lv = lastV {
-                            self.drawCpuLine(from: v, to: lv, thickness: 0.02);
+                            self.drawCpuLine(from: v, to: lv, thickness: 0.02, color: color);
                         } else {
                             /* store the first one so we can close the gap at the end */
                             firstV = v
@@ -361,10 +393,50 @@ extension Renderer: MTKViewDelegate {
                     /* close circle */
                     if let a = firstV,
                        let b = lastV {
-                        self.drawCpuLine(from: a, to: b, thickness: 0.02)
+                        self.drawCpuLine(from: a, to: b, thickness: 0.02, color: color)
                     }
                 }
             }
+#else
+            func makeVertices() {
+                for i in 0..<20 {
+                    let x = cos(Float(i) / 20.0 * Float.pi*2) * 5.0
+                    let y = sin(Float(i) / 20.0 * Float.pi*2) * 5.0
+
+                    let a = SIMD3<Float>([x +  0.7, -0.7, y]);
+                    let b = SIMD3<Float>([x + -0.7, -0.7, y]);
+                    let c = SIMD3<Float>([x + -0.7,  0.7, y]);
+                    let d = SIMD3<Float>([x +  0.7,  0.7, y]);
+
+                    let color = SIMD4<Float>([0.8, 1.0, 0.9, 0.1])
+                    let contour = [
+                        (a, b),
+                        (b, c),
+                        (c, d),
+                        (d, a),
+                    ]
+                    
+                    var first = true
+                    let vertA0 = UInt16(self.cpu_vbuf.count)
+                    let vertA1 = UInt16(self.cpu_vbuf.count + 1)
+                    for (from, to) in contour {
+                        self.drawCpuLine(from: from, to: to, thickness: 0.02, color: color);
+                        
+                        if first {
+                        } else {
+                            let v = UInt16(self.cpu_vbuf.count - 6)
+                            ibufCpuQuad(v + 0, v + 1, v + 2, v + 3)
+                        }
+                        
+                        first = false
+                    }
+                    let vertZ0 = UInt16(self.cpu_vbuf.count - 2)
+                    let vertZ1 = UInt16(self.cpu_vbuf.count - 1)
+                    
+                    ibufCpuQuad(vertA0, vertA1, vertZ0, vertZ1)
+                }
+            }
+#endif
         
             guard let encoder = buffer.makeRenderCommandEncoder(descriptor: outlineRenderPassDesc) else { return }
 
@@ -402,8 +474,10 @@ extension Renderer: MTKViewDelegate {
     
         drawOutlinesToRenderTarget(buffer: buffer)
 
+#if false
         let kernel = MPSImageGaussianBlur(device: device, sigma: 15.0)
         kernel.encode(commandBuffer: buffer, inPlaceTexture: &outlineBloomTarget, fallbackCopyAllocator: nil)
+#endif
 
         let renderPassDescriptor = view.currentRenderPassDescriptor!
         let encoder = buffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor)!

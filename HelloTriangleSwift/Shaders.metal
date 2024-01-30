@@ -30,7 +30,10 @@ struct OutlineFragmentOut {
 fragment OutlineFragmentOut outlineFragmentShader(
     OutlineRasterizerData in [[stage_in]]
 ) {
-    return (OutlineFragmentOut) { .raw = in.color, .bloom = in.color };
+    return (OutlineFragmentOut) {
+        .raw = in.color*0.1,
+        .bloom = in.color.x*0.1
+    };
 }
 /* =================== OUTLINE RENDER SHADERS =================== */
 
