@@ -308,6 +308,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				"OTHER_SWIFT_FLAGS[arch=*]" = "-DMSAA";
 				PRODUCT_BUNDLE_IDENTIFIER = HelloTriangleSwift;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "HelloTriangleSwift/Bridging-Header.h";
@@ -328,6 +329,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				"OTHER_SWIFT_FLAGS[arch=*]" = "-DMSAA";
 				PRODUCT_BUNDLE_IDENTIFIER = HelloTriangleSwift;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "HelloTriangleSwift/Bridging-Header.h";

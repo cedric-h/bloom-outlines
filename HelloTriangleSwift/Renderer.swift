@@ -76,9 +76,11 @@ class Renderer: NSObject {
 
     /* needed for outline -> renderTarget pipeline */
     var outlineRawTarget: MTLTexture
-    // var outlineRawTargetMSAA: MTLTexture
     var outlineBloomTarget: MTLTexture
-    // var outlineBloomTargetMSAA: MTLTexture
+#if MSAA
+    var outlineRawTargetMSAA: MTLTexture
+    var outlineBloomTargetMSAA: MTLTexture
+#endif
     var outlineRenderPassDesc: MTLRenderPassDescriptor
     var outlinePipelineState: MTLRenderPipelineState
     var cpu_lineCount: Int = 0
@@ -106,6 +108,7 @@ class Renderer: NSObject {
             return device.makeTexture(descriptor: texDesc)!
         }
         
+#if MSAA
         func makeOutlineRenderTargetMSAA(device: MTLDevice, metalKitView: MTKView) -> MTLTexture {
             let texDesc = MTLTextureDescriptor()
             texDesc.width          = (metalKitView.currentDrawable?.texture.width)!
@@ -119,6 +122,7 @@ class Renderer: NSObject {
 
             return device.makeTexture(descriptor: texDesc)!
         }
+#endif
 
         func makeOutlineRenderPassDescriptor(
             device: MTLDevice,
@@ -137,21 +141,27 @@ class Renderer: NSObject {
             desc.stencilAttachment.loadAction = .clear
             desc.stencilAttachment.storeAction = .store
             
-            // desc.colorAttachments[0].texture = rawTargetMSAA
-            // desc.colorAttachments[0].resolveTexture = rawTarget
-            desc.colorAttachments[0].texture = rawTarget
+            #if MSAA
+                desc.colorAttachments[0].texture = rawTargetMSAA
+                desc.colorAttachments[0].resolveTexture = rawTarget
+                desc.colorAttachments[0].storeAction = .storeAndMultisampleResolve
+            #else
+                desc.colorAttachments[0].texture = rawTarget
+                desc.colorAttachments[0].storeAction = .store
+            #endif
             desc.colorAttachments[0].loadAction = .clear
             desc.colorAttachments[0].clearColor = MTLClearColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 0.0)
-            desc.colorAttachments[0].storeAction = .store
-            // desc.colorAttachments[0].storeAction = .storeAndMultisampleResolve
 
-            // desc.colorAttachments[1].texture = bloomTargetMSAA
-            // desc.colorAttachments[1].resolveTexture = bloomTarget
-            desc.colorAttachments[1].texture = bloomTarget
+            #if MSAA
+                desc.colorAttachments[1].texture = bloomTargetMSAA
+                desc.colorAttachments[1].resolveTexture = bloomTarget
+                desc.colorAttachments[1].storeAction = .storeAndMultisampleResolve
+            #else
+                desc.colorAttachments[1].texture = bloomTarget
+                desc.colorAttachments[1].storeAction = .store
+            #endif
             desc.colorAttachments[1].loadAction = .clear
             desc.colorAttachments[1].clearColor = MTLClearColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 0.0)
-            desc.colorAttachments[1].storeAction = .store
-            // desc.colorAttachments[1].storeAction = .storeAndMultisampleResolve
             
             return desc
         }
@@ -187,7 +197,7 @@ class Renderer: NSObject {
             descriptor.colorAttachments[1].destinationAlphaBlendFactor = .oneMinusSourceAlpha
 
             assert(rawTargetMSAA.sampleCount == bloomTargetMSAA.sampleCount)
-            descriptor.sampleCount                     = rawTargetMSAA.sampleCount
+            descriptor.sampleCount           = rawTargetMSAA.sampleCount
 
             return (try? device.makeRenderPipelineState(descriptor: descriptor))!
         }
@@ -212,8 +222,24 @@ class Renderer: NSObject {
 
         outlineRawTarget = makeOutlineRenderTarget(device: device, metalKitView: metalKitView)
         outlineBloomTarget = makeOutlineRenderTarget(device: device, metalKitView: metalKitView)
-        // outlineRawTargetMSAA = makeOutlineRenderTargetMSAA(device: device, metalKitView: metalKitView)
-        // outlineBloomTargetMSAA = makeOutlineRenderTargetMSAA(device: device, metalKitView: metalKitView)
+#if MSAA
+        outlineRawTargetMSAA = makeOutlineRenderTargetMSAA(device: device, metalKitView: metalKitView)
+        outlineBloomTargetMSAA = makeOutlineRenderTargetMSAA(device: device, metalKitView: metalKitView)
+        outlineRenderPassDesc = makeOutlineRenderPassDescriptor(
+            device: device,
+            metalKitView: metalKitView,
+            rawTarget: outlineRawTarget,
+            rawTargetMSAA: outlineRawTargetMSAA,
+            bloomTarget: outlineBloomTarget,
+            bloomTargetMSAA: outlineBloomTargetMSAA
+        )
+        outlinePipelineState = makeOutlinePipelineState(
+            device: device,
+            metalKitView: metalKitView,
+            rawTargetMSAA: outlineRawTargetMSAA,
+            bloomTargetMSAA: outlineBloomTargetMSAA
+        )
+#else
         outlineRenderPassDesc = makeOutlineRenderPassDescriptor(
             device: device,
             metalKitView: metalKitView,
@@ -228,6 +254,7 @@ class Renderer: NSObject {
             rawTargetMSAA: outlineRawTarget,
             bloomTargetMSAA: outlineBloomTarget
         )
+#endif
 
         super.init()
         
