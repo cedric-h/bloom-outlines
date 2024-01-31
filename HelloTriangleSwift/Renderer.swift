@@ -4,6 +4,9 @@ import Foundation
 import MetalPerformanceShaders
 import simd
 
+typealias Position = SIMD3<Float>;
+typealias Color = SIMD4<Float>;
+
 extension simd_float4x4 {
     static func perspective(aspect: Float, fovy: Float, near: Float, far: Float) -> Self {
         let yScale = 1 / tan(fovy * 0.5)
@@ -268,7 +271,7 @@ class Renderer: NSObject {
             options: MTLResourceOptions.cpuCacheModeWriteCombined
         )
         self.gpu_ibuf = device.makeBuffer(
-            length: MemoryLayout<UInt16>.stride * newLineCapacity * 6,
+            length: MemoryLayout<UInt16>.stride * newLineCapacity * 12,
             options: MTLResourceOptions.cpuCacheModeWriteCombined
         )
     }
@@ -374,6 +377,27 @@ extension Renderer: MTKViewDelegate {
 
         self.cpu_lineCount += 1
     }
+    
+    func drawContour(_ contour: [(Position, Position, Color)], thickness: Float) {
+        var first = true
+        let vertA0 = UInt16(self.cpu_vbuf.count)
+        let vertA1 = UInt16(self.cpu_vbuf.count + 1)
+        for (from, to, color) in contour {
+            self.drawCpuLine(from: from, to: to, thickness: thickness, color: color);
+
+            if first {
+            } else {
+                let v = UInt16(self.cpu_vbuf.count - 6)
+                ibufCpuQuad(v + 0, v + 1, v + 2, v + 3)
+            }
+
+            first = false
+        }
+        let vertZ0 = UInt16(self.cpu_vbuf.count - 2)
+        let vertZ1 = UInt16(self.cpu_vbuf.count - 1)
+
+        ibufCpuQuad(vertA0, vertA1, vertZ0, vertZ1)
+    }
 
     func draw(in view: MTKView) {
         guard let drawable = view.currentDrawable,
@@ -383,44 +407,44 @@ extension Renderer: MTKViewDelegate {
             self.clearCpuLines();
 #if false
             func makeVertices() {
-                let color = SIMD4<Float>([0.8, 1.0, 0.9, 1.0])
-
                 /* make 10 "windows" arranged in a circle */
-                for i in 0..<10 {
-                    let modelX = cos(Float(i) / 10.0 * Float.pi*2) * 5.0
-                    let modelY = sin(Float(i) / 10.0 * Float.pi*2) * 5.0
+                for model_i in 0..<10 {
+                    let modelX = cos(Float(model_i) / 10.0 * Float.pi*2) * 5.0
+                    let modelY = sin(Float(model_i) / 10.0 * Float.pi*2) * 5.0
 
                     /* SIDE_LENGTH doesn't include BORDER_RADIUS, so total square size is sum of these two */
                     let BORDER_RADIUS: Float = 0.35
                     let SIDE_LENGTH: Float = 0.7
 
-                    var firstV: Optional<SIMD3<Float>> = nil
-                    var lastV: Optional<SIMD3<Float>> = nil
+                    var points: [SIMD3<Float>] = []
                     for i in 0..<16 {
                         var p = SIMD2<Float>(
                             cos(Float(i) / 16.0 * Float.pi*2) * BORDER_RADIUS,
                             sin(Float(i) / 16.0 * Float.pi*2) * BORDER_RADIUS
                         );
 
-                        p.x += ((p.x < 0) ? -1 : 1) * SIDE_LENGTH * 0.5
-                        p.y += ((p.y < 0) ? -1 : 1) * SIDE_LENGTH * 0.5
-
-                        let v = SIMD3<Float>([modelX + p.x, p.y, modelY])
-
-                        /* connect this point to the last one */
-                        if let lv = lastV {
-                            self.drawCpuLine(from: v, to: lv, thickness: 0.02, color: color);
-                        } else {
-                            /* store the first one so we can close the gap at the end */
-                            firstV = v
+                        if (model_i%2) == 0 {
+                            p.x += ((p.x < 0) ? -1 : 1) * SIDE_LENGTH * 0.5
+                            p.y += ((p.y < 0) ? -1 : 1) * SIDE_LENGTH * 0.5
                         }
-                        lastV = v
+
+                        points.append(SIMD3<Float>([modelX + p.x, p.y, modelY]))
                     }
 
-                    /* close circle */
-                    if let a = firstV,
-                       let b = lastV {
-                        self.drawCpuLine(from: a, to: b, thickness: 0.02, color: color)
+                    var contour: [(SIMD3<Float>, SIMD3<Float>)] = []
+
+                    for v in points {
+                        contour.append((contour.isEmpty ? points.last! : contour.last!.1, v))
+                    }
+                    contour.append((points.first!, points.last!))
+
+                    let color = SIMD4<Float>([0.8, 1.0, 0.9, 0.1]);
+                    if false {
+                        for (a, b) in contour {
+                            drawCpuLine(from: a, to: b, thickness: 0.02, color: color)
+                        }
+                    } else {
+                        drawContour(contour, thickness: 0.02, color: color)
                     }
                 }
             }
@@ -435,32 +459,15 @@ extension Renderer: MTKViewDelegate {
                     let c = SIMD3<Float>([x + -0.7,  0.7, y]);
                     let d = SIMD3<Float>([x +  0.7,  0.7, y]);
 
-                    let color = SIMD4<Float>([0.8, 1.0, 0.9, 0.1])
-                    let contour = [
-                        (a, b),
-                        (b, c),
-                        (c, d),
-                        (d, a),
-                    ]
-
-                    var first = true
-                    let vertA0 = UInt16(self.cpu_vbuf.count)
-                    let vertA1 = UInt16(self.cpu_vbuf.count + 1)
-                    for (from, to) in contour {
-                        self.drawCpuLine(from: from, to: to, thickness: 0.02, color: color);
-
-                        if first {
-                        } else {
-                            let v = UInt16(self.cpu_vbuf.count - 6)
-                            ibufCpuQuad(v + 0, v + 1, v + 2, v + 3)
-                        }
-
-                        first = false
-                    }
-                    let vertZ0 = UInt16(self.cpu_vbuf.count - 2)
-                    let vertZ1 = UInt16(self.cpu_vbuf.count - 1)
-
-                    ibufCpuQuad(vertA0, vertA1, vertZ0, vertZ1)
+                    drawContour(
+                        [
+                            (a, b, SIMD4<Float>(0.8, 1.0, 0.9, 1.0) * 0.1),
+                            (b, c, SIMD4<Float>(0.8, 1.0, 0.9, 1.0) * 0.1),
+                            (c, d, SIMD4<Float>(0.8, 1.0, 0.9, 1.0) * 1.0),
+                            (d, a, SIMD4<Float>(0.8, 1.0, 0.9, 1.0) * 1.0),
+                        ],
+                        thickness: 0.05
+                    )
                 }
             }
 #endif
@@ -490,7 +497,7 @@ extension Renderer: MTKViewDelegate {
             encoder.setVertexBuffer(self.gpu_vbuf, offset: 0, index: 0)
             encoder.drawIndexedPrimitives(
                 type: .triangle,
-                indexCount: self.cpu_lineCount * 6,
+                indexCount: self.cpu_lineCount * 12,
                 indexType: .uint16,
                 indexBuffer: self.gpu_ibuf,
                 indexBufferOffset: 0

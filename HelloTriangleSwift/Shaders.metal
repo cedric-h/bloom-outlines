@@ -31,8 +31,8 @@ fragment OutlineFragmentOut outlineFragmentShader(
     OutlineRasterizerData in [[stage_in]]
 ) {
     return (OutlineFragmentOut) {
-        .raw = in.color*0.1,
-        .bloom = in.color.x*0.1
+        .raw = in.color * (in.color.a == 1.0),
+        .bloom = in.color
     };
 }
 /* =================== OUTLINE RENDER SHADERS =================== */
@@ -55,6 +55,14 @@ vertex FullscreenRasterizerData fullscreenVertexShader(
     return out;
 }
 
+float linear_to_srgb(float x)
+{
+    if (x <= 0.0031308f) {
+        return 12.92f * x;
+    }
+    return 1.055f * pow(x, 1.f / 2.4f) - 0.055f;
+}
+
 fragment float4 fullscreenFragmentShader(
     FullscreenRasterizerData in [[stage_in]],
     texture2d<float, access::sample> rawTexture [[ texture(0) ]],
@@ -63,6 +71,10 @@ fragment float4 fullscreenFragmentShader(
     constexpr sampler ts (mag_filter::linear,
                                       min_filter::linear);
     
-    return 3.0*bloomTexture.sample(ts, in.uv) + 0.25*rawTexture.sample(ts, in.uv);
+    float4 out = 1.0*bloomTexture.sample(ts, in.uv) + rawTexture.sample(ts, in.uv);
+    out.x = linear_to_srgb(out.x);
+    out.y = linear_to_srgb(out.y);
+    out.z = linear_to_srgb(out.z);
+    return out;
 }
 /* =================== FULLSCREEN RENDER SHADERS =================== */
