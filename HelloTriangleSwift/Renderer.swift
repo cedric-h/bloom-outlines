@@ -4,7 +4,8 @@ import Foundation
 import MetalPerformanceShaders
 import simd
 
-typealias Position = SIMD3<Float>;
+typealias Position3 = SIMD3<Float>;
+typealias Vector3 = SIMD3<Float>;
 typealias Color = SIMD4<Float>;
 
 extension simd_float4x4 {
@@ -377,8 +378,8 @@ extension Renderer: MTKViewDelegate {
 
         self.cpu_lineCount += 1
     }
-    
-    func drawContour(_ contour: [(Position, Position, Color)], thickness: Float) {
+
+    func drawContour(_ contour: [(Position3, Position3, Color)], thickness: Float) {
         var first = true
         let vertA0 = UInt16(self.cpu_vbuf.count)
         let vertA1 = UInt16(self.cpu_vbuf.count + 1)
@@ -405,46 +406,62 @@ extension Renderer: MTKViewDelegate {
 
         func drawOutlinesToRenderTarget(buffer: MTLCommandBuffer) {
             self.clearCpuLines();
-#if false
+#if true
             func makeVertices() {
                 /* make 10 "windows" arranged in a circle */
                 for model_i in 0..<10 {
                     let modelX = cos(Float(model_i) / 10.0 * Float.pi*2) * 5.0
                     let modelY = sin(Float(model_i) / 10.0 * Float.pi*2) * 5.0
 
-                    /* SIDE_LENGTH doesn't include BORDER_RADIUS, so total square size is sum of these two */
-                    let BORDER_RADIUS: Float = 0.35
-                    let SIDE_LENGTH: Float = 0.7
+                    /* NOTE: default square is 2x2 with logical origin around 0, 0 */
+                    let SIDE_LENGTH: Float = Float(model_i) / 10.0
+                    let EDGE_DETAIL: Int = 6
 
-                    var points: [SIMD3<Float>] = []
-                    for i in 0..<16 {
-                        var p = SIMD2<Float>(
-                            cos(Float(i) / 16.0 * Float.pi*2) * BORDER_RADIUS,
-                            sin(Float(i) / 16.0 * Float.pi*2) * BORDER_RADIUS
-                        );
+                    var points: [Position3] = []
+                    for corner_i in 0..<4 {
+                        func side(_ _i: Int) -> (Position3, Position3) {
+                            let i = (_i == -1) ? 3 : _i
 
-                        if (model_i%2) == 0 {
-                            p.x += ((p.x < 0) ? -1 : 1) * SIDE_LENGTH * 0.5
-                            p.y += ((p.y < 0) ? -1 : 1) * SIDE_LENGTH * 0.5
+                            let axis = Vector3(
+                                cos(Float(i) / 4.0 * Float.pi*2),
+                                sin(Float(i) / 4.0 * Float.pi*2),
+                                0
+                            )
+                            let side = Vector3(-axis.y, axis.x, 0)*SIDE_LENGTH
+
+                            return (
+                                axis - side,
+                                axis + side
+                            )
                         }
 
-                        points.append(SIMD3<Float>([modelX + p.x, p.y, modelY]))
+                        let (_, beforeCorner) = side(corner_i - 1)
+                        let (thisCorner, _) = side(corner_i)
+
+                        let model = Position3(modelX, 0, modelY)
+                        let radius = length(beforeCorner - thisCorner)
+                        let center = sign(mix(beforeCorner, thisCorner, t: 0.5))*Position3(SIDE_LENGTH, SIDE_LENGTH, 0)
+                        for i in 0...EDGE_DETAIL {
+                            let p = mix(beforeCorner, thisCorner, t: Float(i)/Float(EDGE_DETAIL))
+                            let rounded = normalize(p - center)*radius + center
+                            points.append(rounded + model)
+                        }
                     }
 
-                    var contour: [(SIMD3<Float>, SIMD3<Float>)] = []
+                    var contour: [(Position3, Position3, Color)] = []
 
+                    let color = SIMD4<Float>(0.8, 1.0, 0.9, 1.0);
                     for v in points {
-                        contour.append((contour.isEmpty ? points.last! : contour.last!.1, v))
+                        contour.append((contour.isEmpty ? points.last! : contour.last!.1, v, color))
                     }
-                    contour.append((points.first!, points.last!))
+                    contour.append((points.first!, points.last!, color))
 
-                    let color = SIMD4<Float>([0.8, 1.0, 0.9, 0.1]);
                     if false {
-                        for (a, b) in contour {
+                        for (a, b, color) in contour {
                             drawCpuLine(from: a, to: b, thickness: 0.02, color: color)
                         }
                     } else {
-                        drawContour(contour, thickness: 0.02, color: color)
+                        drawContour(contour, thickness: 0.02)
                     }
                 }
             }
@@ -464,7 +481,7 @@ extension Renderer: MTKViewDelegate {
                             (a, b, SIMD4<Float>(0.8, 1.0, 0.9, 1.0) * 0.1),
                             (b, c, SIMD4<Float>(0.8, 1.0, 0.9, 1.0) * 0.1),
                             (c, d, SIMD4<Float>(0.8, 1.0, 0.9, 1.0) * 1.0),
-                            (d, a, SIMD4<Float>(0.8, 1.0, 0.9, 1.0) * 1.0),
+                            (d, a, SIMD4<Float>(0.8, 1.0, 0.9, 1.0) * 0.1),
                         ],
                         thickness: 0.05
                     )
