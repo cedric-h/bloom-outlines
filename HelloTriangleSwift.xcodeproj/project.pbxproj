@@ -303,12 +303,12 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 4TV38VJZU9;
 				INFOPLIST_FILE = HelloTriangleSwift/Info.plist;
+				INFOPLIST_KEY_MetalCaptureEnabled = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 12.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				"OTHER_SWIFT_FLAGS[arch=*]" = "-DMSAA";
 				PRODUCT_BUNDLE_IDENTIFIER = HelloTriangleSwift;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "HelloTriangleSwift/Bridging-Header.h";
@@ -324,12 +324,12 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 4TV38VJZU9;
 				INFOPLIST_FILE = HelloTriangleSwift/Info.plist;
+				INFOPLIST_KEY_MetalCaptureEnabled = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 12.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				"OTHER_SWIFT_FLAGS[arch=*]" = "-DMSAA";
 				PRODUCT_BUNDLE_IDENTIFIER = HelloTriangleSwift;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "HelloTriangleSwift/Bridging-Header.h";

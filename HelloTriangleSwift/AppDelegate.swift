@@ -1,11 +1,3 @@
-//
-//  AppDelegate.swift
-//  HelloTriangleSwift
-//
-//  Created by Peter Edmonston on 10/7/18.
-//  Copyright © 2018 com.peteredmonston. All rights reserved.
-//
-
 import UIKit
 
 @UIApplicationMain

@@ -439,7 +439,7 @@ extension Renderer: MTKViewDelegate {
                         let (thisCorner, _) = side(corner_i)
 
                         let model = Position3(modelX, 0, modelY)
-                        let radius = length(beforeCorner - thisCorner)
+                        let radius = 1 - SIDE_LENGTH
                         let center = sign(mix(beforeCorner, thisCorner, t: 0.5))*Position3(SIDE_LENGTH, SIDE_LENGTH, 0)
                         for i in 0...EDGE_DETAIL {
                             let p = mix(beforeCorner, thisCorner, t: Float(i)/Float(EDGE_DETAIL))
@@ -463,6 +463,21 @@ extension Renderer: MTKViewDelegate {
                     } else {
                         drawContour(contour, thickness: 0.02)
                     }
+
+                    let a = SIMD3<Float>([modelX +  1.0, -1.0, modelY]);
+                    let b = SIMD3<Float>([modelX + -1.0, -1.0, modelY]);
+                    let c = SIMD3<Float>([modelX + -1.0,  1.0, modelY]);
+                    let d = SIMD3<Float>([modelX +  1.0,  1.0, modelY]);
+
+                    drawContour(
+                        [
+                            (a, b, SIMD4<Float>(0.8, 0.5, 0.4, 1.0) * 1.0),
+                            (b, c, SIMD4<Float>(0.8, 0.5, 0.4, 1.0) * 1.0),
+                            (c, d, SIMD4<Float>(0.8, 0.5, 0.4, 1.0) * 1.0),
+                            (d, a, SIMD4<Float>(0.8, 0.5, 0.4, 1.0) * 1.0),
+                        ],
+                        thickness: 0.01
+                    )
                 }
             }
 #else
@@ -508,8 +523,8 @@ extension Renderer: MTKViewDelegate {
                     newLineCapacity: self.cpu_lineCount * 2
                 )
             }
-            self.gpu_vbuf.contents().copyMemory(from: self.cpu_vbuf, byteCount: self.gpu_vbuf.length)
-            self.gpu_ibuf.contents().copyMemory(from: self.cpu_ibuf, byteCount: self.gpu_ibuf.length)
+            self.gpu_vbuf.contents().copyMemory(from: self.cpu_vbuf, byteCount: self.cpu_vbuf.count * MemoryLayout<OutlineVertex>.stride)
+            self.gpu_ibuf.contents().copyMemory(from: self.cpu_ibuf, byteCount: self.cpu_ibuf.count * MemoryLayout<UInt16>.stride)
 
             encoder.setVertexBuffer(self.gpu_vbuf, offset: 0, index: 0)
             encoder.drawIndexedPrimitives(
@@ -555,6 +570,8 @@ extension Renderer: MTKViewDelegate {
         encoder.setFragmentTexture(outlineRawTarget, index: 0)
         encoder.setFragmentTexture(outlineBloomTarget, index: 1)
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+        encoder.setFragmentTexture(nil, index: 0)
+        encoder.setFragmentTexture(nil, index: 1)
 
         encoder.endEncoding()
         buffer.present(drawable)
