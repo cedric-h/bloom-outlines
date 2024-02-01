@@ -439,12 +439,16 @@ extension Renderer: MTKViewDelegate {
                         let (thisCorner, _) = side(corner_i)
 
                         let model = Position3(modelX, 0, modelY)
-                        let radius = 1 - SIDE_LENGTH
-                        let center = sign(mix(beforeCorner, thisCorner, t: 0.5))*Position3(SIDE_LENGTH, SIDE_LENGTH, 0)
-                        for i in 0...EDGE_DETAIL {
-                            let p = mix(beforeCorner, thisCorner, t: Float(i)/Float(EDGE_DETAIL))
-                            let rounded = normalize(p - center)*radius + center
-                            points.append(rounded + model)
+                        if SIDE_LENGTH < 1 {
+                            let radius = 1 - SIDE_LENGTH
+                            let center = sign(mix(beforeCorner, thisCorner, t: 0.5))*Position3(SIDE_LENGTH, SIDE_LENGTH, 0)
+                            for i in 0...EDGE_DETAIL {
+                                let p = mix(beforeCorner, thisCorner, t: Float(i)/Float(EDGE_DETAIL))
+                                let rounded = normalize(p - center)*radius + center
+                                points.append(rounded + model)
+                            }
+                        } else {
+                            points.append(thisCorner + model)
                         }
                     }
 
